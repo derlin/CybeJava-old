@@ -1,9 +1,9 @@
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.cookie.Cookie;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -13,13 +13,12 @@ import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * @author: Lucy Linder
@@ -27,19 +26,39 @@ import java.util.Properties;
  */
 public class CybeConnector {
 
-    private static final String organisation_form_url = "https://wayf.switch" +
+
+    @FunctionalInterface
+    public interface ThrowableConsumer<A> {
+        void accept( A a ) throws Exception;
+    }
+
+    private static final String ORGANISATION_FORM_URL = "https://wayf.switch" +
             ".ch/SWITCHaai/WAYF?entityID=https%3A%2F%2Fcyberlearn.hes-so" +
             ".ch%2Fshibboleth&return=https%3A%2F%2Fcyberlearn.hes-so.ch%2FShibboleth" +
             ".sso%2FLogin%3FSAMLDS%3D1%26target%3Dhttps%253A%252F%252Fcyberlearn.hes-so" +
             ".ch%252Fauth%252Fshibboleth%252Findex.php";
-
-    private static final String auth_form_url = "https://aai-logon.hes-so.ch/idp/Authn/UserPassword";
-    private static final String confirm_form_url = "https://cyberlearn.hes-so.ch/Shibboleth.sso/SAML2/POST";
-
-    private static final NameValuePair organisation_form_value = new BasicNameValuePair( "user_idp",
-            "https://aai-logon.hes-so.ch/idp/shibboleth" );
+    private static final String AUTH_FORM_URL = "https://aai-logon.hes-so.ch/idp/Authn/UserPassword";
+    private static final String CONFIRM_FORM_URL = "https://cyberlearn.hes-so.ch/Shibboleth.sso/SAML2/POST";
+    private static final String LOGOUT_URL = "http://cyberlearn.hes-so.ch/login/logout.php";
+    private static final String HOME_URI = "http://cyberlearn.hes-so.ch";
 
     private static final String username = "lucy.linder";
+    private CloseableHttpClient httpclient;
+    private Map<String, String> courses = new HashMap<>();
+
+
+    public static void main( String[] args ) throws Exception{
+        CybeConnector connector = new CybeConnector();
+        connector.connect();
+        connector.disconnect();
+    }//end main
+
+
+    public CybeConnector(){
+        BasicCookieStore cookieStore = new BasicCookieStore();
+        httpclient = HttpClients.custom().setDefaultCookieStore( cookieStore ).setRedirectStrategy( new
+                LaxRedirectStrategy() ).build();
+    }
 
 
     public static void setProperties(){
@@ -74,112 +93,87 @@ public class CybeConnector {
     }//end setProperties
 
 
-    public static void main( String[] args ) throws Exception{
+    private void connect() throws Exception{
 
-        BasicCookieStore cookieStore = new BasicCookieStore();
-        CloseableHttpClient httpclient = HttpClients.custom().setDefaultCookieStore( cookieStore )
-                .setRedirectStrategy( new LaxRedirectStrategy() ).build();
-        List<NameValuePair> pairs = new ArrayList<NameValuePair>();
+        final List<NameValuePair> pairs = new ArrayList<>();
+        pairs.add( new BasicNameValuePair( "user_idp", "https://aai-logon.hes-so.ch/idp/shibboleth" ) );
         pairs.add( new BasicNameValuePair( "j_username", username ) );
         pairs.add( new BasicNameValuePair( "j_password", "YesYouCan6" ) );
 
-        try{
-            HttpPost httppost = new HttpPost( organisation_form_url );
-            httppost.setEntity( new UrlEncodedFormEntity( new ArrayList<NameValuePair>() {{
-                add( organisation_form_value );
-            }} ) );
-
-            CloseableHttpResponse response1 = httpclient.execute( httppost );
+        ThrowableConsumer<String> doPostFunction = ( url ) -> {
+            HttpPost httppost = new HttpPost( url );
             try{
-                HttpEntity entity = response1.getEntity();
+            // create and execute the post
+            httppost.setEntity( new UrlEncodedFormEntity( pairs ) );
+            HttpResponse response = httpclient.execute( httppost );
 
-                String responseString = EntityUtils.toString( entity, "UTF-8" );
-                pairs.addAll( getHiddenFields( responseString ) );
-                System.out.println("response2 hidden fields " + listToString( pairs ));
-
-                EntityUtils.consume( entity );
-
-                System.out.println( "organisation form: " + response1.getStatusLine() );
-                System.out.println( "Initial set of cookies:" );
-                List<Cookie> cookies = cookieStore.getCookies();
-                if( cookies.isEmpty() ){
-                    System.out.println( "None" );
-                }else{
-                    for( int i = 0; i < cookies.size(); i++ ){
-                        System.out.println( "- " + cookies.get( i ).toString() );
-                    }
-                }
-
-            }finally{
-                response1.close();
+            // check the answer is 200 - OK
+            if( response.getStatusLine().getStatusCode() != 200 ){
+                throw new Exception( String.format( "post to %s failed. Status line = %s%n", url,
+                        response.getStatusLine() ) );
             }
 
-            //HttpUriRequest login = RequestBuilder.post().setUri( new URI( "https://someportal/" ) )
-            // .addParameter(
-            //        "j_username", username ).addParameter( "j_password", "YesYouCan6" ).build();
-            //CloseableHttpResponse response2 = httpclient.execute( login );
+            // get the hidden SAML fields
+            HttpEntity entity = response.getEntity();
+            Document doc = Jsoup.parse( EntityUtils.toString( entity, "UTF-8" ) );
+            for( Element input : doc.select( "input[type=hidden]" ) ){
+                pairs.add( new BasicNameValuePair( input.attr( "name" ), input.attr( "value" ) ) );
+            }//end for
 
-            HttpPost httppost2 = new HttpPost( auth_form_url );
-            httppost2.setEntity( new UrlEncodedFormEntity( pairs ) );
+            // close the entity streams
+            EntityUtils.consume( entity );
 
-            CloseableHttpResponse response2 = httpclient.execute( httppost2 );
-
-            try{
-                HttpEntity entity = response2.getEntity();
-
-                System.out.println( "Login form get: " + response2.getStatusLine() );
-                String responseString = EntityUtils.toString( entity, "UTF-8" );
-                pairs.addAll( getHiddenFields( responseString ) );
-                System.out.println("response2 hidden fields " + listToString( pairs ));
-                EntityUtils.consume( entity );
-
-                System.out.println( "Post logon cookies:" );
-                List<Cookie> cookies = cookieStore.getCookies();
-                if( cookies.isEmpty() ){
-                    System.out.println( "None" );
-                }else{
-                    for( int i = 0; i < cookies.size(); i++ ){
-                        System.out.println( "- " + cookies.get( i ).toString() );
-                    }
-                }
             }finally{
-                response2.close();
             }
 
+        };
 
-            HttpPost httppost3 = new HttpPost( confirm_form_url );
-            httppost3.setEntity( new UrlEncodedFormEntity( pairs ) );
-            CloseableHttpResponse response3 = httpclient.execute( httppost3 );
+        doPostFunction.accept( ORGANISATION_FORM_URL );
+        doPostFunction.accept( AUTH_FORM_URL );
+        doPostFunction.accept( CONFIRM_FORM_URL );
 
-            System.out.println( response3.getStatusLine() );
-        }finally{
-            httpclient.close();
-        }
+        HttpEntity entity = httpclient.execute( new HttpGet( HOME_URI ) ).getEntity();
+        String welcomePage = EntityUtils.toString( entity, "UTF-8" );
+        parseCourses( welcomePage );
+        EntityUtils.consume( entity );
 
+        System.out.println( "Connected" );
     }//end main
 
 
-    private static List<NameValuePair> getHiddenFields( String body ){
-        List<NameValuePair> pairs = new ArrayList<NameValuePair>();
-        Document doc = Jsoup.parse( body );
+    public boolean disconnect() throws IOException{
+        return httpclient.execute( new HttpGet( LOGOUT_URL ) ).getStatusLine().getStatusCode() == 200;
+    }//end disconnect
 
-        for( Element input : doc.getElementsByTag( "input" ) ){
-            if( input.attr( "type" ).equals( "hidden" ) ){
-                pairs.add( new BasicNameValuePair( input.attr( "name" ), input.attr( "value" ) ) );
-            }
+
+    private static Map<String, String> parseCourses( String content ){
+        Map<String, String> courses = new HashMap<>();
+        Document doc = Jsoup.parse( content );
+
+        Elements as = doc.select( "li.type_course a[title]" );
+        for( Element a : as ){
+            courses.put( a.attr( "title" ), a.attr( "href" ) );
         }//end for
+
+        return courses;
+    }//end parseCourses
+
+
+    private static List<NameValuePair> getHiddenFields( String body ){
+        List<NameValuePair> pairs = new ArrayList<>();
+
 
         return pairs;
     }//end getHiddenFields
 
 
     private static String listToString( List<? extends Object> list ){
-        if(list.size() == 0) return "[]";
+        if( list.size() == 0 ) return "[]";
 
-        StringBuilder builder = new StringBuilder(  );
+        StringBuilder builder = new StringBuilder();
         builder.append( "[ " );
         for( Object o : list ){
-           builder.append( o.toString() ).append( ", " );
+            builder.append( o.toString() ).append( ", " );
         }//end for
 
         builder.replace( builder.length() - 3, builder.length() - 1, " ]" );
