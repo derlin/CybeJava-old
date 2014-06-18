@@ -7,6 +7,7 @@ import org.apache.http.cookie.Cookie;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.LaxRedirectStrategy;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
@@ -24,7 +25,7 @@ import java.util.Properties;
  * @author: Lucy Linder
  * @date: 18.06.2014
  */
-public class CybeConnector{
+public class CybeConnector {
 
     private static final String organisation_form_url = "https://wayf.switch" +
             ".ch/SWITCHaai/WAYF?entityID=https%3A%2F%2Fcyberlearn.hes-so" +
@@ -39,6 +40,7 @@ public class CybeConnector{
             "https://aai-logon.hes-so.ch/idp/shibboleth" );
 
     private static final String username = "lucy.linder";
+
 
     public static void setProperties(){
 
@@ -75,11 +77,15 @@ public class CybeConnector{
     public static void main( String[] args ) throws Exception{
 
         BasicCookieStore cookieStore = new BasicCookieStore();
-        CloseableHttpClient httpclient = HttpClients.custom().setDefaultCookieStore( cookieStore ).build();
-        List<NameValuePair> pairs;
+        CloseableHttpClient httpclient = HttpClients.custom().setDefaultCookieStore( cookieStore )
+                .setRedirectStrategy( new LaxRedirectStrategy() ).build();
+        List<NameValuePair> pairs = new ArrayList<NameValuePair>();
+        pairs.add( new BasicNameValuePair( "j_username", username ) );
+        pairs.add( new BasicNameValuePair( "j_password", "YesYouCan6" ) );
+
         try{
             HttpPost httppost = new HttpPost( organisation_form_url );
-            httppost.setEntity( new UrlEncodedFormEntity( new ArrayList<NameValuePair>(){{
+            httppost.setEntity( new UrlEncodedFormEntity( new ArrayList<NameValuePair>() {{
                 add( organisation_form_value );
             }} ) );
 
@@ -87,19 +93,13 @@ public class CybeConnector{
             try{
                 HttpEntity entity = response1.getEntity();
 
-                System.out.println( "Login form get: " + response1.getStatusLine() );
                 String responseString = EntityUtils.toString( entity, "UTF-8" );
-                Document doc = Jsoup.parse( responseString);
-                pairs = new ArrayList<NameValuePair>(  );
-                pairs.add( new BasicNameValuePair( "j_username", username ) );
-                pairs.add( new BasicNameValuePair( "j_password", "YesYouCan6" ) );
-
-                for( Element hidden : doc.getElementsByTag( "hidden" ) ){
-                     pairs.add( new BasicNameValuePair( hidden.attr( "name" ), hidden.attr( "value" ) ) );
-                }//end for
+                pairs.addAll( getHiddenFields( responseString ) );
+                System.out.println("response2 hidden fields " + listToString( pairs ));
 
                 EntityUtils.consume( entity );
 
+                System.out.println( "organisation form: " + response1.getStatusLine() );
                 System.out.println( "Initial set of cookies:" );
                 List<Cookie> cookies = cookieStore.getCookies();
                 if( cookies.isEmpty() ){
@@ -114,7 +114,8 @@ public class CybeConnector{
                 response1.close();
             }
 
-            //HttpUriRequest login = RequestBuilder.post().setUri( new URI( "https://someportal/" ) ).addParameter(
+            //HttpUriRequest login = RequestBuilder.post().setUri( new URI( "https://someportal/" ) )
+            // .addParameter(
             //        "j_username", username ).addParameter( "j_password", "YesYouCan6" ).build();
             //CloseableHttpResponse response2 = httpclient.execute( login );
 
@@ -127,6 +128,9 @@ public class CybeConnector{
                 HttpEntity entity = response2.getEntity();
 
                 System.out.println( "Login form get: " + response2.getStatusLine() );
+                String responseString = EntityUtils.toString( entity, "UTF-8" );
+                pairs.addAll( getHiddenFields( responseString ) );
+                System.out.println("response2 hidden fields " + listToString( pairs ));
                 EntityUtils.consume( entity );
 
                 System.out.println( "Post logon cookies:" );
@@ -144,9 +148,10 @@ public class CybeConnector{
 
 
             HttpPost httppost3 = new HttpPost( confirm_form_url );
+            httppost3.setEntity( new UrlEncodedFormEntity( pairs ) );
             CloseableHttpResponse response3 = httpclient.execute( httppost3 );
 
-            System.out.println(response3.getStatusLine() );
+            System.out.println( response3.getStatusLine() );
         }finally{
             httpclient.close();
         }
@@ -154,15 +159,31 @@ public class CybeConnector{
     }//end main
 
 
-    static class KeyVal{
-        String key;
-        String value;
+    private static List<NameValuePair> getHiddenFields( String body ){
+        List<NameValuePair> pairs = new ArrayList<NameValuePair>();
+        Document doc = Jsoup.parse( body );
+
+        for( Element input : doc.getElementsByTag( "input" ) ){
+            if( input.attr( "type" ).equals( "hidden" ) ){
+                pairs.add( new BasicNameValuePair( input.attr( "name" ), input.attr( "value" ) ) );
+            }
+        }//end for
+
+        return pairs;
+    }//end getHiddenFields
 
 
-        public KeyVal( String key, String value ){
-            this.key = key;
-            this.value = value;
-        }
-    }// end class
+    private static String listToString( List<? extends Object> list ){
+        if(list.size() == 0) return "[]";
+
+        StringBuilder builder = new StringBuilder(  );
+        builder.append( "[ " );
+        for( Object o : list ){
+           builder.append( o.toString() ).append( ", " );
+        }//end for
+
+        builder.replace( builder.length() - 3, builder.length() - 1, " ]" );
+        return builder.toString();
+    }//end listToString
 
 }//end class
