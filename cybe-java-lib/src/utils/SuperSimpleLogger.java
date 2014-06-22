@@ -8,15 +8,21 @@ import java.io.PrintStream;
  */
 public class SuperSimpleLogger{
 
-    private static final SuperSimpleLogger DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System.out::printf,
-            System.out::printf, System.out::printf, System.out::printf );
-    private static final SuperSimpleLogger VERBOSE_DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System.out::printf,
-    System.out::printf, System.out::printf, System.out::printf, System.out::printf );
-
     @FunctionalInterface
     public interface Outputter{
         PrintStream printf( String format, Object... args );
     }
+
+    private static final SuperSimpleLogger DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System.out::printf,
+            System.out::printf, System.out::printf, System.err::printf );
+
+    private static final SuperSimpleLogger VERBOSE_DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System
+            .out::printf, System.out::printf, System.out::printf, System.out::printf, System.err::printf );
+
+    private static final Outputter silent = ( f, o ) -> null;
+    private static final SuperSimpleLogger SILENT_LOGGER = SuperSimpleLogger.getInstance( silent, silent, silent,
+            silent );
+
 
     public Outputter debug, verbose, warn, info, error;
 
@@ -27,7 +33,7 @@ public class SuperSimpleLogger{
         logger.warn = warn;
         logger.error = error;
         logger.debug = debug;
-        logger.verbose = (f, o) -> { return null; };
+        logger.verbose = silent;
         return logger;
     }
 
@@ -44,13 +50,48 @@ public class SuperSimpleLogger{
         return DEFAULT_LOGGER;
     }//end default
 
+
     public static SuperSimpleLogger defaultInstanceVerbose(){
         return DEFAULT_LOGGER;
     }//end default
 
 
+    public static SuperSimpleLogger silentLogger(){
+        return SILENT_LOGGER;
+    }//end default
+
     /* *****************************************************************
-     * private constructors
+     * setters
+     * ****************************************************************/
+
+
+    public void setDebug( Outputter debug ){
+        if( debug == null ) debug = ( f, s ) -> null;
+        this.debug = debug;
+    }
+
+
+    public void setVerbose( Outputter verbose ){
+        this.verbose = verbose;
+    }
+
+
+    public void setWarn( Outputter warn ){
+        this.warn = warn;
+    }
+
+
+    public void setInfo( Outputter info ){
+        this.info = info;
+    }
+
+
+    public void setError( Outputter error ){
+        this.error = error;
+    }
+
+    /* *****************************************************************
+     * private
      * ****************************************************************/
 
 
@@ -61,4 +102,5 @@ public class SuperSimpleLogger{
     public boolean isVerbose(){
         return this.verbose != null;
     }//end isVerbose
+
 }//end class

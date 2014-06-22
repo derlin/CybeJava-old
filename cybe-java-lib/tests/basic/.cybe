@@ -1,0 +1,11 @@
+{
+   "course" : "14_HES-SO_FR_Mathématiques spécifiques 2",
+   "course_url" : "http://cyberlearn.hes-so.ch/course/view.php?id=5836",
+   "ctype" : [
+      "text/plain"
+   ],
+   "inodes_to_names_mapping" : {
+      "39847626" : "sol10à19.pdf",
+      "39847683" : "te2_crypto.pdf"
+   }
+}
