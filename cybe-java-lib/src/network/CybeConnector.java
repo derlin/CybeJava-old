@@ -22,6 +22,8 @@ import props.PlatformLinks;
 import utils.SuperSimpleLogger;
 
 import java.io.*;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -48,9 +50,9 @@ public class CybeConnector implements Closeable{
     /* maximum number of connections in the pool */
     private static final int MAX_CONNECTION = 50;
     /* maximum number of connections per given route */
-    private static final int MAX_CONNECTION_PER_ROUTE = 10;
+    private static final int MAX_CONNECTION_PER_ROUTE = 20;
     /* maximum number of connections for the platform */
-    private static final int MAX_CONNECTION_TO_TARGET = 10;
+    private static final int MAX_CONNECTION_TO_TARGET = 20;
 
     /**
      * Simple consumer which write the httpGet content into a file in the current directory.
@@ -69,7 +71,7 @@ public class CybeConnector implements Closeable{
     //----------------------------------------------------
 
     // the logger used by this class. Default to "null"
-    private SuperSimpleLogger logger = SuperSimpleLogger.silentLogger();
+    private SuperSimpleLogger logger = SuperSimpleLogger.silentInstance();
 
     // connections management
     private CloseableHttpClient httpclient;
@@ -90,13 +92,13 @@ public class CybeConnector implements Closeable{
      * Create a connector for the platform.
      * @param platform  the platform settings
      */
-    public CybeConnector( PlatformLinks platform ){
+    public CybeConnector( PlatformLinks platform ) throws URISyntaxException{
         platformLinks = platform;
         cookieStore = new BasicCookieStore();
 
         // create a multithreaded manager and increase the number of parallel connections
         connectionManager = new PoolingHttpClientConnectionManager();
-        targetHost = new HttpHost( platformLinks.homeUrl(), 80 ); // Increase max connections for cybe:80
+        targetHost = new HttpHost( new URI(platformLinks.homeUrl()).getHost(), 80 ); // Increase max connections for cybe:80
         connectionManager.setMaxTotal( MAX_CONNECTION );  // Increase max total connection
         connectionManager.setDefaultMaxPerRoute( MAX_CONNECTION_PER_ROUTE );  // Increase default max connection per
         // route
@@ -293,7 +295,7 @@ public class CybeConnector implements Closeable{
                 EntityUtils.consume( entity );
 
             }else{
-                if( errorHandler != null ) errorHandler.handleError( response );
+                if( errorHandler != null ) errorHandler.handleError( url, response );
             }
 
         }finally{
@@ -403,7 +405,7 @@ public class CybeConnector implements Closeable{
          *               directly
          *               by the connector.
          */
-        void handleError( HttpResponse entity );
+        void handleError( String url, HttpResponse entity );
     }
 
     @FunctionalInterface

@@ -25,9 +25,12 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
             System.getProperty( "user.home" ) + File.separator + ".cybeconf";
 
     private String username;
+
     @SerializedName( "password" )
     private String pass;
 
+    @SerializedName( "target platform" )
+    private String platform;
 
     public static void main( String[] args ) throws IOException{
         Type collectionType = new TypeToken<Map<String, String>>(){
@@ -75,6 +78,16 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
 
     public void setPassword( String pass ){
         this.pass = perlUnpack( pass );
+    }
+
+
+    public String getPlatform(){
+        return platform;
+    }
+
+
+    public void setPlatform( String platform ){
+        this.platform = platform;
     }
 
     /* *****************************************************************

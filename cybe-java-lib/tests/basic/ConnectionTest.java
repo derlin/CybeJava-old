@@ -6,7 +6,9 @@ import network.CybeParser;
 import org.apache.http.NameValuePair;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Test;
 import props.GlobalConfig;
 import props.PlatformLinks;
 
@@ -15,6 +17,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 /**
@@ -32,29 +35,15 @@ public class ConnectionTest{
     static CybeConnector connector;
 
 
-    public static void main( String[] args ) throws Exception{
-        testCybeConnection();
-        testMoodleUnil();
-        //init();
-        //        testCybeConnection();
-        //testPull( analyse3 );
-        //        CybeConnector connector = new CybeConnector( PlateformLinks.getInstance( "cyberlearn.hes-so" ) );
-        //        testCybeDownload(  connector  );
-        //testCookie();
-        //connector.restoreCookies( cookiePath );
-
-    }//end main
-
-
     @Before
-    public static void init() throws Exception{
+    public void init() throws Exception{
         connector = new CybeConnector( PlatformLinks.getInstance( "cyberlearn.hes-so" ) );
         connector.connect( GlobalConfig.getInstance() );
     }//end init
 
 
     @After
-    public static void cleanUp(){
+    public void cleanUp(){
         try{
             if( connector != null && !connector.isConnected() ) connector.close();
         }catch( IOException e ){
@@ -63,7 +52,8 @@ public class ConnectionTest{
     }//end cleanUp
 
 
-    public static void testCookie(){
+    @Test
+    public void testCookie(){
         try{
             ObjectInputStream inputStream = new ObjectInputStream( new FileInputStream(
                     "/home/lucy/git/cybe-java/cookies.ser" ) );
@@ -76,27 +66,37 @@ public class ConnectionTest{
     }//end testCookie
 
 
-    public static void testPull( String courseUrl ) throws Exception{
+    @Test
+    public void testPull() throws Exception{
+        String courseUrl = analyse3;
+        long start = System.currentTimeMillis();
         CybeParser cybeParser = new CybeParser( connector );
         List<Future<NameValuePair>> listOfResources = cybeParser.findCourseResources( courseUrl, //
-                ( t, n, i ) -> System.out.println( "## Consumer " + n ), System.err::println );
+                ( t, n, i ) -> System.out.println( "## Consumer " + n ), (url, entity) -> System.err.println(url + ": " + entity.getStatusLine() ));
 
-        System.out.println( cybeParser.futuresToMap( listOfResources, 10000 ) );
+        Map<String, String> results = cybeParser.futuresToMap( listOfResources, 10000 );
+        Assert.assertTrue( !results.isEmpty() );
 
-        System.out.println( "done" );
+        results.forEach( ( name, url ) -> {
+            System.out.printf( "%s => %s%n", name, url );
+        } );
 
+        System.out.printf( "Execution time: %d%n", System.currentTimeMillis() - start );
         //connector.disconnect();
     }//end testPull
 
 
-    public static void testCybeConnection() throws Exception{
+    @Test
+    public void testCybeConnection() throws Exception{
         CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( "cyberlearn.hes-so" ) );
         connector.connect( GlobalConfig.getInstance() );
-        connector.close();
+        connector
+                .close();
     }//end testCybeConnection
 
 
-    public static void testMoodleUnil() throws Exception{
+    @Test
+    public void testMoodleUnil() throws Exception{
         CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( "moodle.unil" ) );
         connector.connect( new AuthContainer.BasicAuthContainer( "acharmel", "09MoSar10" ) );
         connector.close();

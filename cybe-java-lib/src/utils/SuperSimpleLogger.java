@@ -13,15 +13,9 @@ public class SuperSimpleLogger{
         PrintStream printf( String format, Object... args );
     }
 
-    private static final SuperSimpleLogger DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System.out::printf,
-            System.out::printf, System.out::printf, System.err::printf );
-
-    private static final SuperSimpleLogger VERBOSE_DEFAULT_LOGGER = SuperSimpleLogger.getInstance( System
-            .out::printf, System.out::printf, System.out::printf, System.out::printf, System.err::printf );
-
-    private static final Outputter silent = ( f, o ) -> null;
-    private static final SuperSimpleLogger SILENT_LOGGER = SuperSimpleLogger.getInstance( silent, silent, silent,
-            silent );
+    public static final Outputter SILENT_OPT = ( f, o ) -> null;
+    public static final Outputter SYSOUT_OPT = System.out::printf;
+    public static final Outputter SYSERR_OPT = System.err::printf;
 
 
     public Outputter debug, verbose, warn, info, error;
@@ -33,31 +27,30 @@ public class SuperSimpleLogger{
         logger.warn = warn;
         logger.error = error;
         logger.debug = debug;
-        logger.verbose = silent;
-        return logger;
-    }
-
-
-    public static SuperSimpleLogger getInstance( Outputter verbose, Outputter debug, Outputter info, Outputter warn,
-                                                 Outputter error ){
-        SuperSimpleLogger logger = getInstance( debug, info, warn, error );
-        logger.verbose = verbose;
+        logger.verbose = SILENT_OPT;
         return logger;
     }
 
 
     public static SuperSimpleLogger defaultInstance(){
-        return DEFAULT_LOGGER;
+        SuperSimpleLogger ssl = defaultInstanceVerbose();
+        ssl.verbose = SILENT_OPT;
+        return ssl;
     }//end default
 
 
     public static SuperSimpleLogger defaultInstanceVerbose(){
-        return DEFAULT_LOGGER;
+        SuperSimpleLogger ssl = new SuperSimpleLogger();
+        ssl.setAll( SYSOUT_OPT );
+        ssl.setError( SYSERR_OPT );
+        return ssl;
     }//end default
 
 
-    public static SuperSimpleLogger silentLogger(){
-        return SILENT_LOGGER;
+    public static SuperSimpleLogger silentInstance(){
+        SuperSimpleLogger ssl = new SuperSimpleLogger();
+        ssl.setAll( SILENT_OPT );
+        return ssl;
     }//end default
 
     /* *****************************************************************
@@ -98,6 +91,10 @@ public class SuperSimpleLogger{
     private SuperSimpleLogger(){
     }
 
+
+    private void setAll( Outputter out ){
+        info = debug = error = verbose = warn = out;
+    }//end setAll
 
     public boolean isVerbose(){
         return this.verbose != null;

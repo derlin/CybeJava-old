@@ -1,45 +1,51 @@
 package props;
 
-import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
+import gson.DoNotSerialize;
 import gson.GsonContainable;
 import gson.GsonUtils;
 import org.apache.commons.validator.routines.UrlValidator;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.*;
 
 /**
  * @author: Lucy Linder
  * @date: 19.06.2014
  */
-public class LocalConfig implements GsonContainable {
+public class LocalConfig implements GsonContainable, Closeable{
+    private static final String FILENAME = ".cybe";
+
     private String course;
 
-    @SerializedName( "course_url" )
+    @SerializedName("course_url")
     private String courseUrl;
 
-    @SerializedName( "inodes_to_names_mapping" )
+    @SerializedName("inodes_to_names_mapping")
     private Map<String, String> inodesToNamesMapping = new TreeMap<>();
 
-    @SerializedName( "dir" )
+    @SerializedName("dir")
     private Set<String> dir = new TreeSet<>();
 
-    @SerializedName( "ctype" )
+    @SerializedName("ctype")
     private Set<String> ctypes = new TreeSet<>();
 
-    @SerializedName( "origin" )
+    @SerializedName("origin")
     private Set<String> origin = new TreeSet<>();
 
     // -- not serialized
-    @Expose( serialize = false, deserialize = false )
+    @DoNotSerialize
     private String filepath;
-    @Expose( serialize = false, deserialize = false )
+
+    @DoNotSerialize
     private boolean modified;
 
     //-------------------------------------------------------------
 
 
     public LocalConfig(){
+        this.filepath = FILENAME;
     }
 
 
@@ -55,6 +61,11 @@ public class LocalConfig implements GsonContainable {
 
     public String getFilepath(){
         return filepath;
+    }
+
+
+    public void setFilepath( String filepath ){
+        this.filepath = filepath;
     }
 
 
@@ -74,22 +85,26 @@ public class LocalConfig implements GsonContainable {
 
 
     public void removeFileRef( String uniqueId ){
-        this.inodesToNamesMapping.remove( uniqueId );
+        modified |= this.inodesToNamesMapping.remove( uniqueId ) != null;
     }
 
 
     public void cleanFileRefs( List<String> fileIds ){
-        fileIds.forEach( this.inodesToNamesMapping::remove );
+        fileIds.forEach( this::removeFileRef );
     }//end cleanFileRefs
 
 
     public boolean addDir( String... dir ){
-        return this.dir.addAll( Arrays.asList( dir ) );
+        boolean m = this.dir.addAll( Arrays.asList( dir ) );
+        modified |= m;
+        return m;
     }
 
 
-    public boolean rmDir( String... dir ){
-        return this.dir.addAll( Arrays.asList( dir ) );
+    public boolean removeDir( String... dir ){
+        boolean m = this.dir.addAll( Arrays.asList( dir ) );
+        modified |= m;
+        return m;
     }
 
 
@@ -98,6 +113,7 @@ public class LocalConfig implements GsonContainable {
         for( String c : ctype ){
             ret |= this.ctypes.add( c );
         }//end for
+        modified |= ret;
         return ret;
     }
 
@@ -107,6 +123,7 @@ public class LocalConfig implements GsonContainable {
         for( String c : ctype ){
             ret |= this.ctypes.remove( c );
         }//end for
+        modified |= ret;
         return ret;
     }
 
@@ -114,8 +131,9 @@ public class LocalConfig implements GsonContainable {
     public boolean addOrigin( String... origins ){
         boolean ret = false;
         for( String o : origins ){
-            ret |= this.origin.add( o );
+            if( UrlValidator.getInstance().isValid( o ) ) ret |= this.origin.add( o );
         }//end for
+        modified |= ret;
         return ret;
     }
 
@@ -123,9 +141,20 @@ public class LocalConfig implements GsonContainable {
     public boolean removeOrigin( String... origins ){
         boolean ret = false;
         for( String o : origins ){
-            if( UrlValidator.getInstance().isValid( o ) ) ret |= this.origin.remove( o );
+           ret |= this.origin.remove( o );
         }//end for
+        modified |= ret;
         return ret;
+    }
+
+
+    public void setCourse( String course ){
+        this.course = course;
+    }
+
+
+    public void setCourseUrl( String courseUrl ){
+        this.courseUrl = courseUrl;
     }
 
 
@@ -134,6 +163,10 @@ public class LocalConfig implements GsonContainable {
 
     public boolean save(){
         return GsonUtils.writeJsonFile( this.filepath, this );
+    }//end save
+
+    public boolean save(String filepath){
+        return GsonUtils.writeJsonFile( filepath, this );
     }//end save
 
 
@@ -148,5 +181,13 @@ public class LocalConfig implements GsonContainable {
             if( ct.contains( ctype ) ) return true;
         }//end for
         return false;
+    }
+
+    //----------------------------------------------------
+
+
+    @Override
+    public void close() throws IOException{
+        if( modified ) save();
     }
 }//end class

@@ -110,7 +110,8 @@ public class CybeParser{
      * @return a map of resource names and resources urls.
      */
     public Map<String, String> futuresToMap( List<Future<NameValuePair>> futures, final int timeout ){
-        Map<String, String> result = futures.stream()
+        // using a parallel stream here divides the runtime by a factor 2
+        Map<String, String> result = futures.parallelStream()
                 // wait for each task to finish
                 .map( f -> CybeParser.getWithTimeout( f, timeout ) )
                         // don't process null values
@@ -124,8 +125,10 @@ public class CybeParser{
 
     /**
      * Parse the welcome page and return the list of "My Course", with their url
-     * @return  the map
-     * @throws Exception  see {@link CybeConnector#getResource(String, network.CybeConnector.ResourceConsumer, network.CybeConnector.HttpErrorHandler)}
+     *
+     * @return the map
+     * @throws Exception see {@link CybeConnector#getResource(String, network.CybeConnector.ResourceConsumer,
+     *                   network.CybeConnector.HttpErrorHandler)}
      */
     public Map<String, String> getListOfCourses() throws Exception{
 
@@ -137,7 +140,7 @@ public class CybeParser{
             doc.select( "li.type_course a[title]" ).forEach( ( a ) -> {
                 courses.put( a.attr( "title" ), a.attr( "href" ) );
             } );
-        }, System.err::println );
+        }, errorHandler );
 
         return courses;
     }//end getListOfCourses
@@ -146,6 +149,7 @@ public class CybeParser{
     /* *****************************************************************
      * private utils
      * ****************************************************************/
+
 
     /*
      * get a filename from  a link of the course page
@@ -174,7 +178,6 @@ public class CybeParser{
 
         return "";
     }
-
 
 
     /*
@@ -219,6 +222,7 @@ public class CybeParser{
             return nameUrlPair;
         }
 
+
         /* try to find the resource, doing potentially multiple http gets */
         private void findResource( String url ) throws Exception{
 
@@ -228,19 +232,24 @@ public class CybeParser{
                 if( type.equals( ContentType.TEXT_HTML.getMimeType() ) ){
                     // we have an html page => check for an embedded resource
                     // the viewers always have a div.resourceworkaround element
-                    Elements links = Jsoup.parse( IOUtils.toString( in ) ) //
-                            .select( "div" + ".resourceworkaround a" );
+                    Document doc = Jsoup.parse( IOUtils.toString( in ) );
+                    Element link = doc.select( "div" + ".resourceworkaround a" ).first();
+                    String href = null;
 
-                    if( links.size() == 1 ){
+                    if( link != null ){
                         // only one viewer, it is probably an embedded resource
                         // check the link
-                        String href = links.get( 0 ).attr( "href" );
+                        href = link.attr( "href" );
+                    }else{
+                        // could also be an embedded pdf (<object data="..." ... />)
+                        Element object = doc.select( "object#resourceobject[data]" ).first();
+                        if( object != null ) href = object.attr( "data" );
+                    }
+                    if( href != null ){
                         logger.debug.printf( "getting %s%n", href );
                         findResource( href );
-                    }else{
-                        // neither a resource, nor a "viewer". Nothing to do
-                        logger.debug.printf( "no indirection%n" );
-                    }
+                    } // else: neither a resource, nor a "viewer". Nothing to do
+
 
                 }else{  // we have a real resource (not html)
                     // get the name, probably the last part of the url (if it is done properly)
@@ -251,7 +260,7 @@ public class CybeParser{
                     // callback: call the client
                     consumer.accept( type, name, in );
                 }
-            }, System.out::println );
+            }, errorHandler );
         }
 
     }

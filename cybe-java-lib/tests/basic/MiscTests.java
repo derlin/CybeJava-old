@@ -20,8 +20,8 @@ public class MiscTests {
     public static void main( String[] args ){
         //testFilenames();
         //testJsoup();
-        testNullLambda( () -> null );
-
+        //testNullLambda( () -> null );
+        testLogger();
         String s = "sdf/lala?param=df";
         s = "https://forge.tic.eia-fr.ch/git?= sdlkfj";
 
@@ -43,6 +43,13 @@ public class MiscTests {
         System.out.println(name);
     }//end testJsoup
 
+
+    public static void testLogger(){
+        SuperSimpleLogger logger = SuperSimpleLogger.defaultInstanceVerbose();
+        logger.info.printf( "lala%n" );
+        logger.error.printf( "error%n" );
+        logger.debug.printf( "debug%n" );
+    }//end testLogger
 
     public static void testNullLambda( Supplier<String> supplier ){
         SuperSimpleLogger logger = SuperSimpleLogger.defaultInstance();
