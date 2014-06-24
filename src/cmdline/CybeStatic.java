@@ -24,7 +24,7 @@ import java.util.function.Predicate;
 public class CybeStatic implements Closeable{
 
     private static final String LOCAL_CONF_NAME = ".cybe";
-    private static final int PULL_TIMEOUT_MS = 10000;
+    private static final int PULL_TIMEOUT_MS = 10_000;
     private static final List<String> supportedPlatforms = Arrays.asList( "cyberlearn.hes-so", "moodle.unil" );
     private static final List<String> defaultCtypes = Arrays.asList( "pdf", "text/plain" );
 
@@ -38,12 +38,6 @@ public class CybeStatic implements Closeable{
 
     private SuperSimpleLogger logger;
     private boolean lastCmdret;
-
-
-    @Override
-    public void close() throws IOException{
-        if( localConfig != null ) localConfig.close();
-    }
 
 
     @FunctionalInterface
@@ -60,12 +54,16 @@ public class CybeStatic implements Closeable{
     private Map<String, CommandExecutor<String>> connectionlessHandlers = new HashMap<>(),
             connectionfullHandlers = new HashMap<>();
 
+    //----------------------------------------------------
+
 
     public static void main( String[] args ) throws Exception{
         try( CybeStatic cybe = new CybeStatic( args ) ){
             ;
         }
     }//end main
+
+    //----------------------------------------------------
 
 
     public CybeStatic( String[] argv ){
@@ -100,21 +98,33 @@ public class CybeStatic implements Closeable{
 
         loadLocalConfig();
 
-        if( !isInitialised() ){
+        if( !localConfigOk() ){
             if( interactive ){
                 System.out.println( "Please, run cybe init." );
                 cmdAlreadyExecuted = true;
             }else{
                 printUsageAndQuit( "Directory not initialised. Try cybe init.", 1 );
             }
-
         }
 
+        fillCommandMaps();
+
+        if( !cmdAlreadyExecuted ) lastCmdret = execute( command, params );
+        if( interactive ) interactivePrompt();
+
+        System.exit( lastCmdret ? 0 : 1 );
+    }
+
+
+    //----------------------------------------------------
+
+
+    private void fillCommandMaps(){
         connectionlessHandlers = new HashMap<>();
         connectionlessHandlers.put( "init-global", CybeStatic::initGlobal );
 
         connectionlessHandlers.put( "dump", p -> {
-            System.out.println( localConfig );
+            System.out.println( GsonUtils.toJson( localConfig ).replaceAll( "\\\"|\\{|\\}|\\[|\\]", "" ) );
             return true;
         } );
 
@@ -129,13 +139,17 @@ public class CybeStatic implements Closeable{
 
         connectionfullHandlers.put( "init", this::init );
         connectionfullHandlers.put( "pull", this::pull );
-
-
-        if( !cmdAlreadyExecuted ) lastCmdret = execute( command, params );
-        if( interactive ) interactivePrompt();
-
-        System.exit( lastCmdret ? 0 : 1 );
     }
+
+    //----------------------------------------------------
+
+
+    @Override
+    public void close() throws IOException{
+        if( localConfig != null ) localConfig.close();
+    }
+
+    //----------------------------------------------------
 
 
     private void interactivePrompt(){
@@ -156,24 +170,12 @@ public class CybeStatic implements Closeable{
 
     }//end interactivePrompt
 
-
-    private boolean add( VarargFunction<Boolean, String> method, List<String> params ){
-        params.stream().map( p -> p + " : " + ( method.apply( p ) ? "added." : "failed." ) ) //
-                .forEach( logger.info::printf );
-        return true;
-    }//end add
-
-
-    private boolean remove( VarargFunction<Boolean, String> method, List<String> params ){
-        int sum = params.stream().mapToInt( p -> ( method.apply( p ) ? 1 : 0 ) ).sum();
-        logger.info.printf( "%d items removed.%n", sum );
-        return true;
-    }//end remove
+    //----------------------------------------------------
 
 
     public boolean execute( String cmd, List<String> args ){
 
-        if( !cmd.equals( "init" ) && !isInitialised() ){
+        if( !cmd.equals( "init" ) && !localConfigOk() ){
             logger.info.printf( "Directory not initialised. Try cybe init.%n" );
             return false;
         }
@@ -192,6 +194,25 @@ public class CybeStatic implements Closeable{
     }//end execute
 
 
+    /* *****************************************************************
+     * lambda commands
+     * ****************************************************************/
+
+
+    private boolean add( VarargFunction<Boolean, String> method, List<String> params ){
+        params.stream().map( p -> p + " : " + ( method.apply( p ) ? "added." : "failed." ) ) //
+                .forEach( logger.info::printf );
+        return true;
+    }//end add
+
+
+    private boolean remove( VarargFunction<Boolean, String> method, List<String> params ){
+        int sum = params.stream().mapToInt( p -> ( method.apply( p ) ? 1 : 0 ) ).sum();
+        logger.info.printf( "%d items removed.%n", sum );
+        return true;
+    }//end remove
+
+
     private static boolean initGlobal( List<String> args ){
         GlobalConfig config = new GlobalConfig();
 
@@ -201,6 +222,63 @@ public class CybeStatic implements Closeable{
 
         return config.save();
     }//end initGlobal
+
+
+    private boolean init( List<String> args ){
+        try{
+
+            if( localConfigFileExists() ){
+                String answer = prompt( "A local config already exist. Override ? [Y|n]", //
+                        s -> ( s.isEmpty() || s.matches( "[y|n|Y|N]" ) ) );
+
+                if( !( answer.isEmpty() || answer.matches( "Y|y" ) ) ) return true;
+            }
+
+            localConfig = new LocalConfig();
+            Map<String, String> courses = parser.getListOfCourses();
+            String selectedCourse = choice( "Select a course", new ArrayList<>( courses.keySet() ) );
+            localConfig.setCourse( selectedCourse );
+            localConfig.setCourseUrl( courses.get( selectedCourse ) );
+            localConfig.save( getLocalConfigFilePath() );
+
+        }catch( Exception e ){
+            logger.error.printf( "error while init.%n" );
+            e.printStackTrace();
+            return false;
+        }
+
+        return true;
+    }//end init
+
+
+    private boolean pull( List<String> args ){
+        try{
+            List<Future<NameValuePair>> futures = parser.findCourseResources( //
+                    localConfig.getCourseUrl(), ( ctype, name, in ) -> {
+
+                logger.debug.printf( "=== %s%n", name );
+                if( isCtypeAccepted( ctype ) ){
+                    String path = userDir + File.separator + name;
+                    CybeUtils.saveResource( path, in );
+                    logger.debug.printf( "SAVING %s%n", name );
+                    localConfig.putFileRef( CybeUtils.getUniqueFileId( path ), name );
+                }
+            }, ( url, e ) -> System.err.println( url + ": " + e.getStatusLine() ) );
+
+            parser.futuresToMap( futures, PULL_TIMEOUT_MS );
+
+        }catch( Exception e ){
+            logger.error.printf( "error while pulling.%n" );
+            e.printStackTrace();
+            return false;
+        }
+
+        return true;
+    }//end pull
+
+    /* *****************************************************************
+     * utils to deal with input cmdline
+     * ****************************************************************/
 
 
     private static String prompt( String message, Predicate<String> validator ){
@@ -233,59 +311,10 @@ public class CybeStatic implements Closeable{
     }//end choice
 
 
-    private boolean init( List<String> args ){
-        try{
 
-            if( localConfigFileExists() ){
-                String answer = prompt( "A local config already exist. Override ? [Y|n]", //
-                        s -> ( s.isEmpty() || s.matches( "[y|n|Y|N]" ) ) );
-
-                if( !( answer.isEmpty() || answer.matches( "Y|y" ) ) ) return true;
-            }
-
-            localConfig = new LocalConfig();
-            Map<String, String> courses = parser.getListOfCourses();
-            String selectedCourse = choice( "Select a course", new ArrayList<>( courses.keySet() ) );
-            localConfig.setCourse( selectedCourse );
-            localConfig.setCourseUrl( courses.get( selectedCourse ) );
-            localConfig.save( getLocalConfigFilePath() );
-
-        }catch( Exception e ){
-            logger.error.printf( "error while init.%n" );
-            e.printStackTrace();
-            return false;
-        }
-
-        return true;
-    }//end initGlobal
-
-
-    private boolean pull( List<String> args ){
-        try{
-            List<Future<NameValuePair>> futures = parser.findCourseResources( //
-                    localConfig.getCourseUrl(), ( ctype, name, in ) -> {
-
-                logger.debug.printf( "=== %s%n", name );
-                if( isCtypeAccepted( ctype ) ){
-                    String path = userDir + File.separator + name;
-                    CybeUtils.saveResource( path, in );
-                    logger.debug.printf( "SAVING %s%n", name );
-                    localConfig.putFileRef( CybeUtils.getUniqueFileId( path ), name );
-                }
-            }, ( url, e ) -> System.err.println( url + ": " + e.getStatusLine() ) );
-
-            parser.futuresToMap( futures, PULL_TIMEOUT_MS );
-
-        }catch( Exception e ){
-            logger.error.printf( "error while pooling.%n" );
-            e.printStackTrace();
-            return false;
-        }
-
-        return true;
-    }//end pull
-
-    //-------------------------------------------------------------
+    /* *****************************************************************
+     * config files management
+     * ****************************************************************/
 
 
     private boolean loadLocalConfig(){
@@ -293,30 +322,33 @@ public class CybeStatic implements Closeable{
         if( localCybe.exists() ){
             localConfig = ( LocalConfig ) GsonUtils.getJsonFromFile( localCybe, new LocalConfig() );
         }
-        return isInitialised();
+        return localConfigOk();
     }
+
+
+    private boolean localConfigFileExists(){
+        return new File( getLocalConfigFilePath() ).exists();
+    }
+
+
+    private String getLocalConfigFilePath(){
+        return userDir.concat( File.separator ).concat( LOCAL_CONF_NAME );
+    }
+
+
+    public boolean localConfigOk(){
+        return localConfig != null && !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() );
+    }
+
+    /* *****************************************************************
+     * private utils
+     * ****************************************************************/
 
 
     private boolean isCtypeAccepted( String ctype ){
         return defaultCtypes.stream().anyMatch( ctype::contains ) ||  //
                 localConfig.isCtypeAccepted( ctype );
-    }//end isCtypeAccepted
-
-
-    public boolean isInitialised(){
-        return localConfig != null && !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() );
-    }//end isInitialised
-    //----------------------------------------------------
-
-
-    private boolean localConfigFileExists(){
-        return new File( getLocalConfigFilePath() ).exists();
-    }//end localConfigFileExists
-
-
-    private String getLocalConfigFilePath(){
-        return userDir.concat( File.separator ).concat( LOCAL_CONF_NAME );
-    }//end getLocalConfigFilePath
+    }
 
 
     private boolean createConnectorAndParser(){
