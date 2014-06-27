@@ -34,21 +34,28 @@ public class ConnectionTest{
 
     static CybeConnector connector;
 
+    public static void main( String[] args ) throws Exception{
+        ConnectionTest test = new ConnectionTest();
+        test.readLinks();
+    }//end main
+
+    @Test
+    public void readLinks() throws Exception{
+        PlatformLinks.getInstance( "cyberlearn.hes-so" );
+        System.out.println("ok");
+    }//end readLinks
+
 
     @Before
     public void init() throws Exception{
-        connector = new CybeConnector( PlatformLinks.getInstance( "cyberlearn.hes-so" ) );
+        connector = new CybeConnector( PlatformLinks.getInstance( PlatformLinks.CYBERLEARN_HES_SO) );
         connector.connect( GlobalConfig.getInstance() );
     }//end init
 
 
     @After
     public void cleanUp(){
-        try{
-            if( connector != null && !connector.isConnected() ) connector.close();
-        }catch( IOException e ){
-            e.printStackTrace();
-        }
+        if( connector != null && !connector.isConnected() ) connector.close();
     }//end cleanUp
 
 
@@ -72,7 +79,8 @@ public class ConnectionTest{
         long start = System.currentTimeMillis();
         CybeParser cybeParser = new CybeParser( connector );
         List<Future<NameValuePair>> listOfResources = cybeParser.findCourseResources( courseUrl, //
-                ( t, n, i ) -> System.out.println( "## Consumer " + n ), (url, entity) -> System.err.println(url + ": " + entity.getStatusLine() ));
+                ( t, n, i ) -> System.out.println( "## Consumer " + n ), ( url, entity ) -> System.err.println( url +
+                ": " + entity.getStatusLine() ) );
 
         Map<String, String> results = cybeParser.futuresToMap( listOfResources, 10000 );
         Assert.assertTrue( !results.isEmpty() );
@@ -88,16 +96,15 @@ public class ConnectionTest{
 
     @Test
     public void testCybeConnection() throws Exception{
-        CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( "cyberlearn.hes-so" ) );
+        CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( PlatformLinks.CYBERLEARN_HES_SO ) );
         connector.connect( GlobalConfig.getInstance() );
-        connector
-                .close();
+        connector.close();
     }//end testCybeConnection
 
 
     @Test
     public void testMoodleUnil() throws Exception{
-        CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( "moodle.unil" ) );
+        CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( PlatformLinks.MOODLE_UNIL) );
         connector.connect( new AuthContainer.BasicAuthContainer( "acharmel", "09MoSar10" ) );
         connector.close();
     }//end testMoodleUnil

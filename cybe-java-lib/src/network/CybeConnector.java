@@ -90,7 +90,8 @@ public class CybeConnector implements Closeable{
 
     /**
      * Create a connector for the platform.
-     * @param platform  the platform settings
+     *
+     * @param platform the platform settings
      */
     public CybeConnector( PlatformLinks platform ) throws URISyntaxException{
         platformLinks = platform;
@@ -98,7 +99,8 @@ public class CybeConnector implements Closeable{
 
         // create a multithreaded manager and increase the number of parallel connections
         connectionManager = new PoolingHttpClientConnectionManager();
-        targetHost = new HttpHost( new URI(platformLinks.homeUrl()).getHost(), 80 ); // Increase max connections for cybe:80
+        targetHost = new HttpHost( new URI( platformLinks.homeUrl() ).getHost(), 80 ); // Increase max connections
+        // for cybe:80
         connectionManager.setMaxTotal( MAX_CONNECTION );  // Increase max total connection
         connectionManager.setDefaultMaxPerRoute( MAX_CONNECTION_PER_ROUTE );  // Increase default max connection per
         // route
@@ -224,13 +226,15 @@ public class CybeConnector implements Closeable{
 
     /**
      * Close the connector and release all its resources
-     *
-     * @throws IOException
      */
-    public void close() throws IOException{
-        connectionManager.shutdown();
-        httpclient.close();
-        connected = false;
+    public void close(){
+        try{
+            connectionManager.shutdown();
+            httpclient.close();
+            connected = false;
+        }catch( IOException e ){
+            e.printStackTrace();
+        }
     }//end close
 
 

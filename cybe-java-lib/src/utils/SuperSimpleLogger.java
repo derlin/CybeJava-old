@@ -23,10 +23,10 @@ public class SuperSimpleLogger{
 
     public static SuperSimpleLogger getInstance( Outputter debug, Outputter info, Outputter warn, Outputter error ){
         SuperSimpleLogger logger = new SuperSimpleLogger();
-        logger.info = info;
-        logger.warn = warn;
-        logger.error = error;
-        logger.debug = debug;
+        logger.setInfo( info);
+        logger.setWarn( warn );
+        logger.setError( error );
+        logger.setDebug( debug );
         logger.verbose = SILENT_OPT;
         return logger;
     }
@@ -59,28 +59,27 @@ public class SuperSimpleLogger{
 
 
     public void setDebug( Outputter debug ){
-        if( debug == null ) debug = ( f, s ) -> null;
-        this.debug = debug;
+        this.debug = debug == null ? SILENT_OPT : debug;
     }
 
 
     public void setVerbose( Outputter verbose ){
-        this.verbose = verbose;
+        this.verbose = verbose == null ? SILENT_OPT : verbose;
     }
 
 
     public void setWarn( Outputter warn ){
-        this.warn = warn;
+        this.warn = warn == null ? SILENT_OPT : warn;
     }
 
 
     public void setInfo( Outputter info ){
-        this.info = info;
+        this.info = info == null ? SILENT_OPT : info;
     }
 
 
     public void setError( Outputter error ){
-        this.error = error;
+        this.error = error == null ? SILENT_OPT : error;
     }
 
     /* *****************************************************************
@@ -93,6 +92,7 @@ public class SuperSimpleLogger{
 
 
     private void setAll( Outputter out ){
+        if(out == null) out = SILENT_OPT;
         info = debug = error = verbose = warn = out;
     }//end setAll
 

@@ -22,15 +22,17 @@ public class PlatformLinks implements GsonContainable{
     @SerializedName("organisation_name")
     String name;
 
+    public static final String CYBERLEARN_HES_SO = "cyberlearn.hes-so";
+    public static final String MOODLE_UNIL = "moodle.unil";
 
-    public static PlatformLinks getInstance( String organisation ) throws FileNotFoundException{
 
-        InputStream stream = PlatformLinks.class.getResourceAsStream( "../resources/" +
-                organisation + ".json" );
+    public static PlatformLinks getInstance( String platform ) throws FileNotFoundException{
+
+        InputStream stream = PlatformLinks.class.getResourceAsStream( "/resources/" + platform + ".json" );
         if( stream != null ){
             return ( PlatformLinks ) GsonUtils.getJsonFromFile( stream, new PlatformLinks() );
         }else{
-            throw new FileNotFoundException( organisation + ".json file could not be found" );
+            throw new FileNotFoundException( "Error: " + platform + ".json file could not be found" );
         }
     }//end getInstance
 

@@ -1,6 +1,7 @@
 package utils;
 
 import org.apache.commons.io.IOUtils;
+import win.WinUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -17,6 +18,9 @@ import java.nio.file.attribute.BasicFileAttributes;
  * Version: 0.1
  */
 public class CybeUtils{
+
+    public enum OS{LINUX, MAC, WINDOWS, SUN, OTHER}
+
 
     /**
      * Write the content of an {@link InputStream} into a file.
@@ -53,7 +57,7 @@ public class CybeUtils{
      * @param subpaths
      * @return
      */
-    public static String pathJoin( String... subpaths ){
+    public static String concatPath( String... subpaths ){
         StringBuilder builder = new StringBuilder();
         for( String s : subpaths ){
             if( builder.length() > 0 ) builder.append( File.separator );
@@ -84,15 +88,43 @@ public class CybeUtils{
     }//end isNullOrEmpty
 
 
+    public static OS getOs(){
+        String os = System.getProperty( "os.name" ).toLowerCase();
+        if( os.contains( "linux" ) ) return OS.LINUX;
+        if( os.contains( "win" ) ) return OS.WINDOWS;
+        if( os.contains( "mac" ) ) return OS.MAC;
+        if( os.contains( "sum" ) ) return OS.SUN;
+        return OS.OTHER;
+    }//end getOs
+
+
     /**
-     * TODO
+     * return a string uniquely identifying the given file.
+     * <ul>
+     *     <li>On linux: the inode number</li>
+     *     <li>On Windows/ntfs: {@code "[volumes serial nbr]:[file index high]:[file index low]"}</li>
+     * </ul>
+     * The other systems are not supported. TODO
      *
-     * @param filepath
-     * @return
-     * @throws IOException
+     * @param filepath the path to the file
+     * @return the unique id  or an empty string if the system is not supported
      */
-    public static String getUniqueFileId( String filepath ) throws IOException{
-        return Files.readAttributes( Paths.get( filepath ), BasicFileAttributes.class ).fileKey().toString();
+    public static String getUniqueFileId( String filepath ){
+        String id = "";
+        try{
+            OS os = getOs();
+            if( os == OS.LINUX ){
+                id = Files.readAttributes( Paths.get( filepath ), BasicFileAttributes.class ).fileKey()
+                        .toString();
+                id = id.replaceAll( ".*,ino=", "" ).replace( ")", "" );
+                return id.isEmpty() ? null : id;
+
+            }else if( os == OS.WINDOWS ){
+                id = WinUtils.getUniqueFileId( filepath );
+            }
+        }catch( IOException ignored ){
+        }
+        return id;
     }//end getUniqueFileId
 
 

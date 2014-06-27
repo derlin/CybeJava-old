@@ -28,16 +28,19 @@ import network.CybeConnector.*;
  */
 public class CybeParser{
 
-    private static final int DEFAULT_TIMEOUT = 1000;
-
     private ExecutorService pool = Executors.newWorkStealingPool();
     private CybeConnector connector;
+
+    private SuperSimpleLogger logger = SuperSimpleLogger.silentInstance();
     private HttpErrorHandler errorHandler;
 
-    private static SuperSimpleLogger logger = SuperSimpleLogger.defaultInstance();
-
-
-    {
+    /**
+     * Create a parser using the given cybeConnector.
+     *
+     * @param connector the connector to use
+     */
+    public CybeParser( CybeConnector connector ){
+        this.connector = connector;
         logger.setDebug( null );
     }
 
@@ -47,8 +50,9 @@ public class CybeParser{
      *
      * @param connector the connector to use
      */
-    public CybeParser( CybeConnector connector ){
-        this.connector = connector;
+    public CybeParser( CybeConnector connector, SuperSimpleLogger logger ){
+        this( connector );
+        this.logger = logger;
     }
 
 
@@ -111,9 +115,9 @@ public class CybeParser{
      */
     public Map<String, String> futuresToMap( List<Future<NameValuePair>> futures, final int timeout ){
         // using a parallel stream here divides the runtime by a factor 2
-        Map<String, String> result = futures.parallelStream()
+        Map<String, String> result = futures.stream()
                 // wait for each task to finish
-                .map( f -> CybeParser.getWithTimeout( f, timeout ) )
+                .map( f -> CybeParser.getWithTimeout( f, timeout, logger ) )
                         // don't process null values
                 .filter( f -> f != null )
                         // convert the result to a map
@@ -161,8 +165,7 @@ public class CybeParser{
         String href = link.attr( "href" );
         String filename = lastPartOfUrl( href );
 
-        if( !isNullOrEmpty( filename ) && filename.matches( ".+\\.[a-z]{2,4}$" ) ) //
-        {
+        if( !isNullOrEmpty( filename ) && filename.matches( ".+\\.[a-z]{2,4}$" ) ){
             return normaliseFilname( filename );
         }
 
@@ -181,12 +184,13 @@ public class CybeParser{
 
 
     /*
-     * get the result of a future. The timeout is in ms.
+     * get the result of a future (or null if the timeout is reached). The timeout is in seconds.
      */
-    private static NameValuePair getWithTimeout( Future<NameValuePair> f, int timeout ){
+    private static NameValuePair getWithTimeout( Future<NameValuePair> f, int timeout, SuperSimpleLogger logger ){
         try{
-            return f.get( timeout, TimeUnit.MILLISECONDS );
+            return f.get( timeout, TimeUnit.SECONDS );
         }catch( Exception e ){
+            logger.error.printf( "Exception while gathering future resources: %s%n", e.getMessage() );
             return null;
         }
     }
@@ -226,7 +230,6 @@ public class CybeParser{
         /* try to find the resource, doing potentially multiple http gets */
         private void findResource( String url ) throws Exception{
 
-            logger.debug.printf( "get single resource " + url );
             connector.getResource( url, ( type, finalUrl, in ) -> {
 
                 if( type.equals( ContentType.TEXT_HTML.getMimeType() ) ){
@@ -246,23 +249,23 @@ public class CybeParser{
                         if( object != null ) href = object.attr( "data" );
                     }
                     if( href != null ){
-                        logger.debug.printf( "getting %s%n", href );
+                        //logger.debug.printf( "getting %s%n", href );
                         findResource( href );
                     } // else: neither a resource, nor a "viewer". Nothing to do
 
 
                 }else{  // we have a real resource (not html)
                     // get the name, probably the last part of the url (if it is done properly)
-                    String name = URLDecoder.decode( CybeUtils.lastPartOfUrl( finalUrl ), "UTF-8" );
-                    logger.debug.printf( " --------- found: %s%n", name );
+                    String name = CybeUtils.lastPartOfUrl( URLDecoder.decode( finalUrl, "UTF-8" ) );
+                    //logger.debug.printf( " --------- found: %s%n", name );
                     // store the result
                     nameUrlPair = new BasicNameValuePair( name, finalUrl );
                     // callback: call the client
                     consumer.accept( type, name, in );
                 }
             }, errorHandler );
-        }
 
+        }
     }
 
 }//end class
