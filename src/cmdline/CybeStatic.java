@@ -7,7 +7,6 @@ import org.apache.http.NameValuePair;
 import props.GlobalConfig;
 import props.LocalConfig;
 import props.PlatformLinks;
-import utils.CmdDoc;
 import utils.CybeUtils;
 import utils.SuperSimpleLogger;
 
@@ -17,7 +16,6 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 import static utils.SuperSimpleLogger.*;
 
@@ -44,6 +42,7 @@ public class CybeStatic implements Closeable{
     private CmdDoc doc;
     private SuperSimpleLogger logger = getInstance( SILENT_OPT, SYSOUT_OPT, SYSOUT_OPT, SYSERR_OPT );
     private boolean lastCmdret;
+    private Map<String, String> courses;
 
 
     @FunctionalInterface
@@ -78,7 +77,7 @@ public class CybeStatic implements Closeable{
         userDir = System.getProperty( "user.dir" );        // ( "/tmp/out" ).getAbsolutePath();
 
         Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-                logger.info.printf( "Cleaning up.%n" );
+            logger.info.printf( "Cleaning up.%n" );
             if( localConfig != null ){
                 localConfig.close();
             }
@@ -168,7 +167,7 @@ public class CybeStatic implements Closeable{
         String command;
 
         while( true ){
-            String input = prompt( "> ", i -> true );
+            String input = CmdUtils.prompt( in, "> ", i -> true );
             params = new ArrayList<>( Arrays.asList( input.split( " +" ) ) );
             command = params.remove( 0 );
 
@@ -236,9 +235,10 @@ public class CybeStatic implements Closeable{
     private static boolean initGlobal( List<String> args ){
         GlobalConfig config = new GlobalConfig();
 
-        config.setPlatform( choice( "For which platform do you want to use Cybe ?", supportedPlatforms ) );
-        config.setUsername( prompt( "Your username: ", i -> true ) );
-        config.setPassword( prompt( "Your password: ", i -> true ) );
+        config.setPlatform( CmdUtils.choice( in, "For which platform do you want to use Cybe ?", supportedPlatforms,
+                ( s ) -> CmdUtils.ChoiceMismatchAction.QUIT ) );
+        config.setUsername( CmdUtils.prompt( in, "Your username: ", i -> true ) );
+        config.setPassword( CmdUtils.prompt( in, "Your password: ", i -> true ) );
 
         return config.save();
     }//end initGlobal
@@ -255,17 +255,25 @@ public class CybeStatic implements Closeable{
 
             if( localConfigFileExists() ){
                 // if the file already exists, prompt for a confirmation
-                String answer = prompt( "A local config already exist. Override ? [Y|n]", //
+                String answer = CmdUtils.prompt( in, "A local config already exist. Override ? [Y|n] ", //
                         s -> ( s.isEmpty() || s.matches( "[y|n|Y|N]" ) ) );
 
                 if( !( answer.isEmpty() || answer.matches( "Y|y" ) ) ) return true;
             }
 
             // get the list of courses
-            Map<String, String> courses = parser.getListOfCourses();
+            if( courses == null ) courses = parser.getListOfCourses();
             // create the config file
             localConfig = new LocalConfig( getLocalConfigFilePath() );
-            String selectedCourse = choice( "Select a course", new ArrayList<>( courses.keySet() ) );
+
+            String selectedCourse = CmdUtils.choice( in, "Select a course", new ArrayList<>( courses.keySet() ),
+                    ( s ) -> CmdUtils.ChoiceMismatchAction.RETURN_NULL );
+
+            if( selectedCourse == null ){
+                System.out.println( "Initialisation cancelled." );
+                return true;
+            }
+
             localConfig.setCourse( selectedCourse );
             localConfig.setCourseUrl( courses.get( selectedCourse ) );
             localConfig.save();
@@ -313,42 +321,6 @@ public class CybeStatic implements Closeable{
 
         return true;
     }//end pull
-
-    /* *****************************************************************
-     * utils to deal with input cmdline
-     * ****************************************************************/
-
-
-    private static String prompt( String message, Predicate<String> validator ){
-        String answer;
-        do{
-            System.out.print( message );
-            answer = in.nextLine();
-        }while( !validator.test( answer ) );
-
-        return answer;
-    }//end prompt
-
-
-    private static String choice( String prompt, List<String> choices ){
-        int i = 0, answer = -1;
-
-        System.out.println( prompt + " " );
-        for( String choice : choices )
-            System.out.printf( "  [%d] %s%n", i++, choice );
-
-        System.out.println();
-
-        while( answer < 0 || answer >= i ){
-            System.out.printf( "Your choice [0-%d] ", i - 1 );
-            answer = in.nextInt();
-            in.nextLine();
-        }//end while
-
-        return choices.get( answer );
-    }//end choice
-
-
 
     /* *****************************************************************
      * config files management
@@ -419,7 +391,14 @@ public class CybeStatic implements Closeable{
 
         if( globalConfig.getPlatform() == null ){
             System.out.println( "The platform was not specified." );
-            globalConfig.setPlatform( choice( "Which platform do you use ?", supportedPlatforms ) );
+
+            String choice = CmdUtils.choice( in, "Which platform do you use ?", supportedPlatforms, ( s ) -> {
+                if( CmdUtils.isQuitInput( s ) ) printUsageAndQuit( "Quitting.", 0 );
+                System.out.println( "Wrong input" );
+                return CmdUtils.ChoiceMismatchAction.IGNORE;
+            } );
+
+            globalConfig.setPlatform( choice );
             globalConfig.save();
         }
 
