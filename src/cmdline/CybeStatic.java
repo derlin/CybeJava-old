@@ -78,9 +78,9 @@ public class CybeStatic implements Closeable{
         userDir = System.getProperty( "user.dir" );        // ( "/tmp/out" ).getAbsolutePath();
 
         Runtime.getRuntime().addShutdownHook( new Thread( () -> {
+                logger.info.printf( "Cleaning up.%n" );
             if( localConfig != null ){
                 localConfig.close();
-                logger.info.printf( "Saved config file.%n" );
             }
             if( connector != null ) connector.close();
             logger.info.printf( "Done.%n" );
@@ -304,6 +304,7 @@ public class CybeStatic implements Closeable{
 
             parser.futuresToMap( futures, PULL_TIMEOUT_SEC );
             logger.debug.printf( "FUTURES GATHERED%n" );
+
         }catch( Exception e ){
             logger.error.printf( "error while pulling.%n" );
             e.printStackTrace();

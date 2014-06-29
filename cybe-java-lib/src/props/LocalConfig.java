@@ -183,7 +183,7 @@ public class LocalConfig implements GsonContainable, Closeable{
 
     public static LocalConfig loadInstance( String path ){
         LocalConfig config = ( LocalConfig ) GsonUtils.getJsonFromFile( path, new LocalConfig() );
-        config.filepath = path;
+        if( config != null ) config.filepath = path;
         return config;
     }//end loadInstance
 

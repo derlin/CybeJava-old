@@ -4,7 +4,6 @@ import network.AuthContainer;
 import network.CybeConnector;
 import network.CybeParser;
 import org.apache.http.NameValuePair;
-import org.apache.http.impl.client.BasicCookieStore;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -12,10 +11,6 @@ import org.junit.Test;
 import props.GlobalConfig;
 import props.PlatformLinks;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
@@ -59,18 +54,23 @@ public class ConnectionTest{
     }//end cleanUp
 
 
-    @Test
-    public void testCookie(){
-        try{
-            ObjectInputStream inputStream = new ObjectInputStream( new FileInputStream(
-                    "/home/lucy/git/cybe-java/cookies.ser" ) );
-            BasicCookieStore cookies = ( BasicCookieStore ) inputStream.readObject();
-            System.out.println( cookies );
-            cookies.clearExpired( new Date() );
-        }catch( IOException | ClassNotFoundException e ){
-            e.printStackTrace();
-        }
-    }//end testCookie
+    //@Test
+    //public void testCookie(){
+    //    try{
+    //        ObjectInputStream inputStream = new ObjectInputStream( new FileInputStream(
+    //                "/home/lucy/git/cybe-java/cookies.ser" ) );
+    //        BasicCookieStore cookieStore = ( BasicCookieStore ) inputStream.readObject();
+    //        System.out.println( cookieStore );
+    //        Date now = new Date();
+    //        cookieStore.clearExpired( now );
+    //        for( Cookie cookie : cookieStore.getCookies() ){
+    //           Assert.assertTrue( !cookie.isExpired( now ) );
+    //        }//end for
+    //
+    //    }catch( IOException | ClassNotFoundException e ){
+    //        e.printStackTrace();
+    //    }
+    //}//end testCookie
 
 
     @Test
@@ -89,8 +89,9 @@ public class ConnectionTest{
             System.out.printf( "%s => %s%n", name, url );
         } );
 
+        Assert.assertEquals( 22, results.size() );
         System.out.printf( "Execution time: %d%n", System.currentTimeMillis() - start );
-        //connector.disconnect();
+
     }//end testPull
 
 
@@ -98,6 +99,7 @@ public class ConnectionTest{
     public void testCybeConnection() throws Exception{
         CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( PlatformLinks.CYBERLEARN_HES_SO ) );
         connector.connect( GlobalConfig.getInstance() );
+        Assert.assertTrue( connector.isConnected() );
         connector.close();
     }//end testCybeConnection
 
@@ -106,6 +108,7 @@ public class ConnectionTest{
     public void testMoodleUnil() throws Exception{
         CybeConnector connector = new CybeConnector( PlatformLinks.getInstance( PlatformLinks.MOODLE_UNIL) );
         connector.connect( new AuthContainer.BasicAuthContainer( "acharmel", "09MoSar10" ) );
+        Assert.assertTrue( connector.isConnected() );
         connector.close();
     }//end testMoodleUnil
 
