@@ -1,6 +1,7 @@
-package utils;
+package cmdline;
 
 import gson.GsonUtils;
+import utils.LevenshteinDistance;
 
 import java.io.InputStream;
 import java.util.*;
