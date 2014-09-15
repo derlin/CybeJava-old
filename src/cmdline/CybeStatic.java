@@ -298,10 +298,9 @@ public class CybeStatic implements Closeable{
                         existingResources.add( name ); // mark this file as handled
                         String path = CybeUtils.concatPath( userDir, name );
                         CybeUtils.saveResource( path, in ); // save the resource
-                        logger.debug.printf( "SAVING %s (thread: %s)%n", name, Thread.currentThread().getId() );
+                        logger.info.printf( "  --> SAVING %s (thread: %s)%n", name, Thread.currentThread().getId() );
                         // add its unique id to the inodesToNameMapping
                         localConfig.putFileRef( CybeUtils.getUniqueFileId( path ), name );
-
                     }
 
                 }catch( Exception e ){
