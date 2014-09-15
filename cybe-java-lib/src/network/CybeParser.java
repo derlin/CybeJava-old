@@ -1,5 +1,7 @@
 package network;
 
+import network.CybeConnector.HttpErrorHandler;
+import network.CybeConnector.ResourceConsumer;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.NameValuePair;
 import org.apache.http.entity.ContentType;
@@ -19,20 +21,19 @@ import java.util.stream.Collectors;
 
 import static utils.CybeUtils.*;
 
-import network.CybeConnector.*;
-
 /**
  * User: lucy
  * Date: 20/06/14
  * Version: 0.1
  */
-public class CybeParser{
+public class CybeParser {
 
     private ExecutorService pool = Executors.newWorkStealingPool();
     private CybeConnector connector;
 
     private SuperSimpleLogger logger = SuperSimpleLogger.silentInstance();
     private HttpErrorHandler errorHandler;
+
 
     /**
      * Create a parser using the given cybeConnector.
@@ -60,14 +61,15 @@ public class CybeParser{
      * see {@link #findCourseResources(String, network.CybeConnector.ResourceConsumer,
      * network.CybeConnector.HttpErrorHandler)}    *
      */
-    public List<Future<NameValuePair>> findCourseResources( String baseUrl, ResourceConsumer consumer ) throws
-            Exception{
+    public List<Future<NameValuePair>> findCourseResources( String baseUrl,
+                                                            ResourceConsumer consumer ) throws Exception{
         return findCourseResources( baseUrl, consumer, null );
     }
 
 
     /**
-     * Parse a course page and iterate over all the resources it contains, calling the consumer.accept method for each
+     * Parse a course page and iterate over all the resources it contains,
+     * calling the consumer.accept method for each
      * one.
      * Careful: the consumer can be called in parallel from different threads..
      *
@@ -92,7 +94,7 @@ public class CybeParser{
                     // get the href attr
                     .map( link -> link.attr( "href" ) )
                             // keep only potential resource links
-                    .filter( href -> href.matches( ".+((\\.pdf)|(resource)).*" ) )
+                    .filter( CybeParser::isLinkOfInterest )
                             // don't process a link twice
                     .filter( alreadySeen::add )
                             // submit the job to the pool
@@ -104,6 +106,8 @@ public class CybeParser{
 
         return list;
     }//end getAllResources
+
+
 
 
     /**
@@ -154,6 +158,25 @@ public class CybeParser{
      * private utils
      * ****************************************************************/
 
+    /**
+     * Test if the link found in the main course page is of interest, i.e. is either a direct link or a
+     * link to a subpage potentially holding an iframe or pdf viewer.
+     * <br />
+     * Note that the links should come from the main-content section only, since there is a lot of garbage
+     * in the sidebards that are difficult to identify/parse
+     *
+     * @param href the url
+     * @return true if the link should be parsed further, false otherwise
+     */
+    private static boolean isLinkOfInterest( String href ){
+        boolean res;
+
+        res = href.matches( ".+((\\.pdf)|(resource)).*" ); // direct link or subpage with <object>
+        res |= href.matches( ".+/mod/url.+" );  // link to a subpage with an iframe viewer
+
+        return res;
+    }//end isLinkOfInterest
+
 
     /*
      * get a filename from  a link of the course page
@@ -186,7 +209,8 @@ public class CybeParser{
     /*
      * get the result of a future (or null if the timeout is reached). The timeout is in seconds.
      */
-    private static NameValuePair getWithTimeout( Future<NameValuePair> f, int timeout, SuperSimpleLogger logger ){
+    private static NameValuePair getWithTimeout( Future<NameValuePair> f, int timeout,
+                                                 SuperSimpleLogger logger ){
         try{
             return f.get( timeout, TimeUnit.SECONDS );
         }catch( Exception e ){
@@ -207,7 +231,7 @@ public class CybeParser{
      * We need this class since the Cyberlearn platform uses redirects a lot
      * and loves to wrap resources into embedded viewers...
      */
-    private class CallableResourceFinder implements Callable<NameValuePair>{
+    private class CallableResourceFinder implements Callable<NameValuePair> {
         // the starting url: can lead either to the resource or to an embedded viewer (or to nothing)
         String url;
         NameValuePair nameUrlPair; // the result
@@ -244,10 +268,11 @@ public class CybeParser{
                         // check the link
                         href = link.attr( "href" );
                     }else{
-                        // could also be an embedded pdf (<object data="..." ... />)
-                        Element object = doc.select( "object#resourceobject[data]" ).first();
-                        if( object != null ) href = object.attr( "data" );
+                        // try to find a pdf link in the subpage (inside iframe etc.)
+                        href = parseSubpage( doc );
                     }
+
+
                     if( href != null ){
                         //logger.debug.printf( "getting %s%n", href );
                         findResource( href );
@@ -266,6 +291,22 @@ public class CybeParser{
             }, errorHandler );
 
         }
+
+
+        private String parseSubpage( Document doc ){
+            Element object;
+
+            // could be an embedded pdf (<object data="..." ... />)
+            object = doc.select( "object#resourceobject[data]" ).first();
+            if( object != null ) return object.attr( "data" );
+
+            // the embedded pdf could also be inside an iframe
+            object = doc.select( "iframe#resourceobject[src]" ).first();
+            if( object != null ) return object.attr( "src" );
+
+
+            return null;
+        }//end parseObjectTag
     }
 
 }//end class
