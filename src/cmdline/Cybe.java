@@ -23,7 +23,7 @@ import static utils.SuperSimpleLogger.*;
  * @author: Lucy Linder
  * @date: 19.06.2014
  */
-public class CybeStatic implements Closeable{
+public class Cybe implements Closeable{
 
     private static final String LOCAL_CONF_NAME = ".cybe";
     private static final int PULL_TIMEOUT_SEC = 15;
@@ -63,7 +63,7 @@ public class CybeStatic implements Closeable{
 
 
     public static void main( String[] args ) throws Exception{
-        try( CybeStatic cybe = new CybeStatic( args ) ){
+        try( Cybe cybe = new Cybe( args ) ){
             ;
         }
     }//end main
@@ -71,7 +71,7 @@ public class CybeStatic implements Closeable{
     //----------------------------------------------------
 
 
-    public CybeStatic( String[] argv ){
+    public Cybe( String[] argv ){
 
         //userDir = new File( "/home/lucy/Dropbox/projets/cybe-java/tests/out" ).getAbsolutePath();//new File
         userDir = System.getProperty( "user.dir" );        // ( "/tmp/out" ).getAbsolutePath();
@@ -121,21 +121,15 @@ public class CybeStatic implements Closeable{
 
     private void fillCommandMaps(){
         connectionlessHandlers = new HashMap<>();
-        connectionlessHandlers.put( "init-global", CybeStatic::initGlobal );
+        connectionlessHandlers.put( "init-global", Cybe::initGlobal );
 
         connectionlessHandlers.put( "dump", p -> {
             System.out.println( GsonUtils.toJson( localConfig ).replaceAll( "\\\"|\\{|\\}|\\[|\\]|,", "" ) );
             return true;
         } );
 
-        connectionlessHandlers.put( "help", args -> {
-            System.out.println( doc.help() );
-            return true;
-        } );
-        connectionlessHandlers.put( "man", args -> {
-            System.out.println( doc.man() );
-            return true;
-        } );
+        connectionlessHandlers.put( "help", args -> helpOrMan( args, false ) );
+        connectionlessHandlers.put( "man", args -> helpOrMan( args, true ) );
 
         connectionlessHandlers.put( "add-origin", args -> add( localConfig::addOrigin, args ) );  //
         connectionlessHandlers.put( "rm-origin", args -> remove( localConfig::removeOrigin, args ) );  //
@@ -320,6 +314,27 @@ public class CybeStatic implements Closeable{
 
         return true;
     }//end pull
+
+
+    private boolean helpOrMan( List<String> args, boolean isMan ){
+        // no arguments, print the list of available commands
+        if( args.size() == 0 ){
+            System.out.println( isMan ? doc.man() : doc.help() );
+        }else{
+            // if a command name was specified, print its description
+            String cmd = args.get( 0 );
+            CmdDoc.CmdDescription descr = doc.get( cmd );
+
+            if( descr != null ){
+                System.out.println( descr.fullDescription() );
+            }else{
+                // the command does not exist -> print the closest command name available
+                System.out.printf( "No such command %s. Did you mean %s ?%n", cmd, doc.betterMatch( cmd ) );
+            }
+        }
+        return true;
+
+    }//end help
 
     /* *****************************************************************
      * config files management
