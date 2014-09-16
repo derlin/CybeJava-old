@@ -271,6 +271,7 @@ public class Cybe implements Closeable{
             localConfig.setCourse( selectedCourse );
             localConfig.setCourseUrl( courses.get( selectedCourse ) );
             localConfig.save();
+            isLocalConfigLoaded = true;
 
         }catch( Exception e ){
             logger.error.printf( "error while init.%n" );
