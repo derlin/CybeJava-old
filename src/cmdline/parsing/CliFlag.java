@@ -9,11 +9,16 @@ import java.util.Stack;
  */
 public class CliFlag extends CliOption<Boolean>{
 
-    ICliOptionCallback<Boolean> callback;
+    Runnable callback;
 
     public CliFlag(){
         // no converter needed
         super( false, null );
+    }
+
+    public CliFlag(Runnable callback ){
+        this( );
+        this.callback = callback;
     }
 
 
@@ -21,7 +26,7 @@ public class CliFlag extends CliOption<Boolean>{
     protected void parse( Stack<String> remainingArgs ) throws Exception{
         // do not pop anything, but just switch the flag on
         value = true;
-        if( callback != null ) callback.notify( this );
+        if( callback != null ) callback.run();
     }
 
 }//end class

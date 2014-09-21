@@ -15,12 +15,6 @@ public class CliOption<E>{
         public E process( String s ) throws Exception;
     }
 
-    @FunctionalInterface
-    public interface ICliOptionCallback<E>{
-        // a callback when a flag is encountered
-        public void notify( CliOption<E> opt ) throws Exception;
-    }
-
     protected ICliOptionConsumer<E> consumer;
     protected E value;
 
