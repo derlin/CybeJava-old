@@ -1,8 +1,13 @@
 package cmdline;
 
+import cmdline.parsing.CliFlag;
+import cmdline.parsing.CliParser;
 import gson.GsonUtils;
 import network.CybeConnector;
 import network.CybeParser;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.filefilter.FileFilterUtils;
+import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.apache.http.NameValuePair;
 import props.GlobalConfig;
 import props.LocalConfig;
@@ -71,47 +76,78 @@ public class Cybe implements Closeable{
     //----------------------------------------------------
 
 
-    public Cybe( String[] argv ){
+    public Cybe( String[] args ){
 
-        //userDir = new File( "/home/lucy/Dropbox/projets/cybe-java/tests/out" ).getAbsolutePath();//new File
-        userDir = System.getProperty( "user.dir" );        // ( "/tmp/out" ).getAbsolutePath();
-
-        Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-            logger.info.printf( "Cleaning up.%n" );
-            if( localConfig != null ){
-                localConfig.close();
-            }
-            if( connector != null ) connector.close();
-            logger.info.printf( "Done.%n" );
-        } ) );
-
+        userDir = System.getProperty( "user.dir" );
         doc = new CmdDoc( this.getClass().getResourceAsStream( "/resources/man.json" ) );
 
         fillCommandMaps();
         loadLocalConfig();
+        addShutdownHook();
 
         // parse options
-        List<String> params = new ArrayList<>( Arrays.asList( argv ) );
-        boolean silent = params.stream().anyMatch( "-s"::equals );
-        boolean interactive = params.stream().anyMatch( "-i"::equals );
-        boolean debug = params.stream().anyMatch( "-d"::equals );
 
-        if( silent ) logger = SuperSimpleLogger.silentInstance();
-        if( debug ) logger.setDebug( SYSOUT_OPT );
+        CliParser parser = new CliParser();
+        parser.registerOption( "-s", new CliFlag( () -> {  // silent
+            logger = SuperSimpleLogger.silentInstance();
+            logger.debug.printf( "silent mode on%n." );
+        } ) );
 
-        logger.debug.printf( "Options: s = %b, i = %b, d = %b%n", silent, interactive, debug );
+        parser.registerOption( "-i", new CliFlag( () -> { // interactive mode
+            logger = SuperSimpleLogger.silentInstance();
+        } ) );
+
+        CliFlag  interactiveFlag = new CliFlag( () -> {  // debug
+            logger.setDebug( SYSOUT_OPT );
+            logger.debug.printf( "debug mode on%n." );
+        } );
+        parser.registerOption( "-d", interactiveFlag );
+
+
+        List<String> params;
+        try{
+            params = parser.parse( args );
+        }catch( Exception e ){
+            logger.debug.printf( "Error while parsing arguments%n" );
+            params = new ArrayList<>();
+        }
 
         // prepare command and params
         params.removeIf( p -> p.startsWith( "-" ) );
 
-        if( params.size() == 0 ){
+        if( params.isEmpty() ){
             interactivePrompt();
+
+        }else if( params.size() == 1 && params.get( 0 ).matches( "update-all" ) ){
+
+            Collection<File> files = FileUtils.listFiles( FileUtils.getFile( userDir ),
+                    FileFilterUtils.nameFileFilter( LOCAL_CONF_NAME ), TrueFileFilter.INSTANCE );
+
+            files.forEach( confFile -> {
+                userDir = confFile.getParent();
+                logger.info.printf( "%n-------------------------------%n" );
+                logger.info.printf( "Changed working directory to %s%n", userDir );
+
+                if( loadLocalConfig() ){
+                    execute( "pull", null );
+                    localConfig.save();
+                    logger.debug.printf( "Saved local config %s%n", getLocalConfigFilePath() );
+
+                }else{
+                    logger.debug.printf( "Could not load local config (%s)%n", getLocalConfigFilePath() );
+                }
+
+            } );
+
+            localConfig = null; // don't save the localConfig in the shutdown hook
+            lastCmdret = true;
 
         }else{
             String command = params.remove( 0 );
             lastCmdret = execute( command, params );
-            if( interactive ) interactivePrompt();
+            if( interactiveFlag.getValue() ) interactivePrompt();
         }
+
         System.exit( lastCmdret ? 0 : 1 );
     }
 
@@ -432,6 +468,18 @@ public class Cybe implements Closeable{
         return true;
 
     }//end createConnectorAndParser
+
+
+    private void addShutdownHook(){
+        Runtime.getRuntime().addShutdownHook( new Thread( () -> {
+            logger.info.printf( "Cleaning up.%n" );
+            if( localConfig != null ){
+                localConfig.close();
+            }
+            if( connector != null ) connector.close();
+            logger.info.printf( "Done.%n" );
+        } ) );
+    }//end addShutdownHook
 
 
     private static void printUsageAndQuit( String s, int exitStatus ){
