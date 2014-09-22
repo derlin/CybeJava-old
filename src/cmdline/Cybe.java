@@ -30,8 +30,10 @@ import static utils.SuperSimpleLogger.*;
  */
 public class Cybe implements Closeable{
 
+    private static final int EXIT_STATUS_ERROR = 1, EXIT_STATUS_OK = 0;
     private static final String LOCAL_CONF_NAME = ".cybe";
-    private static final int PULL_TIMEOUT_SEC = 15;
+    private static final int PULL_TIMEOUT_SEC = 15;  // max time to download one file
+
     private static final List<String> supportedPlatforms = Arrays.asList( "cyberlearn.hes-so", "moodle.unil" );
     private static final List<String> defaultCtypes = Arrays.asList( "pdf", "text/plain" );
 
@@ -45,7 +47,8 @@ public class Cybe implements Closeable{
     private CybeConnector connector;
     private CybeParser parser;
     private CmdDoc doc;
-    private SuperSimpleLogger logger = getInstance( SILENT_OPT, SYSOUT_OPT, SYSOUT_OPT, SYSERR_OPT );
+    private SuperSimpleLogger logger =  // debug, info, warn, error
+            SuperSimpleLogger.getInstance( SILENT_OPT, SYSOUT_OPT, SYSOUT_OPT, SYSERR_OPT );
     private boolean lastCmdret;
     private Map<String, String> courses;
 
@@ -64,45 +67,39 @@ public class Cybe implements Closeable{
     private Map<String, CommandExecutor<String>> connectionlessHandlers = new HashMap<>(),
             connectionfullHandlers = new HashMap<>();
 
-    //----------------------------------------------------
+    /* *****************************************************************
+     * MAIN
+     * ****************************************************************/
 
 
     public static void main( String[] args ) throws Exception{
-        try( Cybe cybe = new Cybe( args ) ){
-            ;
-        }
-    }//end main
 
-    //----------------------------------------------------
+        final SuperSimpleLogger logger =  // debug, info, warn, error
+                SuperSimpleLogger.getInstance( SILENT_OPT, SYSOUT_OPT, SYSOUT_OPT, SYSERR_OPT );
 
-
-    public Cybe( String[] args ){
-
-        userDir = System.getProperty( "user.dir" );
-        doc = new CmdDoc( this.getClass().getResourceAsStream( "/resources/man.json" ) );
-
-        fillCommandMaps();
-        loadLocalConfig();
-        addShutdownHook();
-
-        // parse options
+        // ----------------------------------------------------
+        // arguments parsing
 
         CliParser parser = new CliParser();
         parser.registerOption( "-s", new CliFlag( () -> {  // silent
-            logger = SuperSimpleLogger.silentInstance();
+            logger.setInfo( SILENT_OPT );
+            logger.setWarn( SILENT_OPT );
+            logger.setVerbose( SILENT_OPT );
+            // keep errors
             logger.debug.printf( "silent mode on%n." );
         } ) );
 
-        parser.registerOption( "-i", new CliFlag( () -> { // interactive mode
-            logger = SuperSimpleLogger.silentInstance();
-        } ) );
-
-        CliFlag  interactiveFlag = new CliFlag( () -> {  // debug
+        parser.registerOption( "-d", new CliFlag( () -> { // debug
             logger.setDebug( SYSOUT_OPT );
             logger.debug.printf( "debug mode on%n." );
-        } );
-        parser.registerOption( "-d", interactiveFlag );
+        } ) );
 
+        CliFlag interactiveFlag = new CliFlag();
+        parser.registerOption( "-i", interactiveFlag ); // interactive
+
+        CliFlag updateAllOption = new CliFlag();  // apply to all
+        parser.registerOption( "--all", updateAllOption );
+        parser.registerOption( "-a", updateAllOption );
 
         List<String> params;
         try{
@@ -115,42 +112,112 @@ public class Cybe implements Closeable{
         // prepare command and params
         params.removeIf( p -> p.startsWith( "-" ) );
 
-        if( params.isEmpty() ){
-            interactivePrompt();
+        // ----------------------------------------------------
 
-        }else if( params.size() == 1 && params.get( 0 ).matches( "update-all" ) ){
-
-            Collection<File> files = FileUtils.listFiles( FileUtils.getFile( userDir ),
-                    FileFilterUtils.nameFileFilter( LOCAL_CONF_NAME ), TrueFileFilter.INSTANCE );
-
-            files.forEach( confFile -> {
-                userDir = confFile.getParent();
-                logger.info.printf( "%n-------------------------------%n" );
-                logger.info.printf( "Changed working directory to %s%n", userDir );
-
-                if( loadLocalConfig() ){
-                    execute( "pull", null );
-                    localConfig.save();
-                    logger.debug.printf( "Saved local config %s%n", getLocalConfigFilePath() );
+        try( Cybe cybe = new Cybe( logger ) ){
+            // get the command
+            if( updateAllOption.getValue() ){
+                String command;
+                if( params.isEmpty() ){
+                    logger.info.printf( "No arguments. Assuming pull.%n" );
+                    command = "pull";
 
                 }else{
-                    logger.debug.printf( "Could not load local config (%s)%n", getLocalConfigFilePath() );
+                    command = params.remove( 0 );
                 }
 
-            } );
+                if( cybe.can( command ) ){
+                    // if command exist
+                    cybe.forAll( command, params );
 
-            localConfig = null; // don't save the localConfig in the shutdown hook
-            lastCmdret = true;
+                }else{
+                    printUsageAndQuit( cybe.getUnknownCommandMessage( command ), EXIT_STATUS_ERROR );
+                }
 
-        }else{
-            String command = params.remove( 0 );
-            lastCmdret = execute( command, params );
-            if( interactiveFlag.getValue() ) interactivePrompt();
+            }else if( params.isEmpty() ){
+                // no command specified, switch to interactive mode
+                cybe.interactivePrompt();
+
+            }else{
+                // a command is specified, exec
+                String command = params.remove( 0 );
+                cybe.execute( command, params );
+                if( interactiveFlag.getValue() ) cybe.interactivePrompt();
+            }
+
+            System.exit( cybe.lastCmdret() ? EXIT_STATUS_OK : EXIT_STATUS_ERROR );
         }
+    }//end main
 
-        System.exit( lastCmdret ? 0 : 1 );
+    /* ****************************************************************/
+
+
+    public Cybe(){
+
+        userDir = System.getProperty( "user.dir" );
+        doc = new CmdDoc( this.getClass().getResourceAsStream( "/resources/man.json" ) );
+        logger = SuperSimpleLogger.silentInstance();
+
+        fillCommandMaps();
+        loadLocalConfig();
+        addShutdownHook();
+
     }
 
+
+    public Cybe( SuperSimpleLogger logger ){
+        this();
+        this.logger = logger;
+    }
+
+    // ----------------------------------------------------
+
+
+    /*
+     * check if the given command exists
+     */
+    public boolean can( String command ){
+        return connectionfullHandlers.containsKey( command ) || //
+                connectionlessHandlers.containsKey( command );
+    }//end can
+
+
+    /*
+     * execute the given command for all .cybe folders found under the current directory
+     */
+    public void forAll( String command, List<String> params ){
+        Collection<File> files = FileUtils.listFiles( FileUtils.getFile( userDir ),
+                FileFilterUtils.nameFileFilter( LOCAL_CONF_NAME ), TrueFileFilter.INSTANCE );
+
+
+        lastCmdret = !files.stream().anyMatch( confFile -> { // stop if an error occurs
+            userDir = confFile.getParent();
+            logger.info.printf( "%n-------------------------------%n" );
+            logger.info.printf( "Changed working directory to %s%n", userDir );
+
+            if( loadLocalConfig() ){
+                if( execute( command, params ) ){
+                    localConfig.save();
+                    logger.debug.printf( "Saved local config %s%n", getLocalConfigFilePath() );
+                }else{
+                    System.out.printf( "An error occurred while processing %s", getLocalConfigFilePath() );
+                    System.out.print( "continue ? [y|N] " );
+                    String s = new Scanner( System.in ).nextLine();
+
+                    if( !s.matches( "^y|Y|(yes)$" ) ){
+                        return true; // true => an error occurred
+                    }
+                }
+
+            }else{
+                logger.debug.printf( "Could not load local config (%s)%n", getLocalConfigFilePath() );
+            }
+            return false; // we can keep going
+        } );
+
+        localConfig = null; // don't save the localConfig in the shutdown hook
+
+    }//end updateAll
 
     //----------------------------------------------------
 
@@ -215,7 +282,6 @@ public class Cybe implements Closeable{
 
 
     public boolean execute( String cmd, List<String> args ){
-        boolean ok;
 
         if( !cmd.equals( "init" ) && !isLocalConfigLoaded ){
             logger.info.printf( "Directory not initialised. Try cybe init.%n" );
@@ -223,22 +289,28 @@ public class Cybe implements Closeable{
         }
 
         if( connectionlessHandlers.containsKey( cmd ) ){
-            ok = connectionlessHandlers.get( cmd ).process( args );
+            lastCmdret = connectionlessHandlers.get( cmd ).process( args );
 
         }else if( connectionfullHandlers.containsKey( cmd ) ){
-            if( !createConnectorAndParser() ) printUsageAndQuit( "Could not connect...", 1 );
-            ok = connectionfullHandlers.get( cmd ).process( args );
+            if( !createConnectorAndParser() ) printUsageAndQuit( "Could not connect...", EXIT_STATUS_ERROR );
+            lastCmdret = connectionfullHandlers.get( cmd ).process( args );
 
         }else{
-            System.out.println( "Unknown command: " + cmd );
-            System.out.println( "did you mean " + doc.betterMatch( cmd ).getName() + "?" );
+            logger.error.printf( getUnknownCommandMessage( cmd ) );
             return false;
         }
-        if( !ok ) System.out.println( "Usage: " + doc.get( cmd ).syntax() );
+        if( !lastCmdret ) System.out.println( "Usage: " + doc.get( cmd ).syntax() );
 
-        return ok;
+        return lastCmdret;
 
     }//end execute
+
+
+    public String getUnknownCommandMessage( String cmd ){
+        return String.format( "Unknown command: '%s'.%nDid you mean '%s' ?%n", //
+                cmd, doc.betterMatch( cmd ).getName() );
+
+    }
 
 
     /* *****************************************************************
@@ -262,6 +334,9 @@ public class Cybe implements Closeable{
     }//end remove
 
 
+    /*
+     * save username and password in home folder
+     */
     private static boolean initGlobal( List<String> args ){
         GlobalConfig config = new GlobalConfig();
 
@@ -319,6 +394,9 @@ public class Cybe implements Closeable{
     }//end init
 
 
+    /*
+     * download new files
+     */
     private boolean pull( List<String> args ){
         try{
             List<Future<NameValuePair>> futures = parser.findCourseResources( //
@@ -353,6 +431,9 @@ public class Cybe implements Closeable{
     }//end pull
 
 
+    /*
+     * display help: man = commands + description,help = commands only
+     */
     private boolean helpOrMan( List<String> args, boolean isMan ){
         // no arguments, print the list of available commands
         if( args.size() == 0 ){
@@ -378,6 +459,9 @@ public class Cybe implements Closeable{
      * ****************************************************************/
 
 
+    /*
+     * look for the .cybe in the current directory
+     */
     private boolean loadLocalConfig(){
         if( isLocalConfigLoaded ) return true;
         File localCybe = new File( getLocalConfigFilePath() );
@@ -385,11 +469,12 @@ public class Cybe implements Closeable{
             localConfig = ( LocalConfig ) GsonUtils.getJsonFromFile( localCybe, new LocalConfig() );
             if( localConfig != null && !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() ) ){
                 isLocalConfigLoaded = true;
-                existingResources = new HashSet<>( getExistingResources( userDir, localConfig::getFileFromId ).values
-                        () );
+                existingResources = new HashSet<>( //
+                        getExistingResources( userDir, localConfig::getFileFromId ).values() );
             }
         }
-        isLocalConfigLoaded = localConfig != null && !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() );
+        isLocalConfigLoaded = localConfig != null &&  //
+                !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() );
         return isLocalConfigLoaded;
 
     }
@@ -405,6 +490,15 @@ public class Cybe implements Closeable{
     }
 
     /* *****************************************************************
+     * getters and utils
+     * ****************************************************************/
+
+
+    public boolean lastCmdret(){
+        return lastCmdret;
+    }
+
+    /* *****************************************************************
      * private utils
      * ****************************************************************/
 
@@ -415,6 +509,9 @@ public class Cybe implements Closeable{
     }
 
 
+    /*
+     * get the list of files in the current folder
+     */
     public static Map<String, String> getExistingResources( String directory, Function<String,
             String> inodeToNameResolver ){
         File rootDir = new File( directory );
@@ -472,12 +569,12 @@ public class Cybe implements Closeable{
 
     private void addShutdownHook(){
         Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-            logger.info.printf( "Cleaning up.%n" );
+            logger.verbose.printf( "Cleaning up.%n" );
             if( localConfig != null ){
                 localConfig.close();
             }
             if( connector != null ) connector.close();
-            logger.info.printf( "Done.%n" );
+            logger.verbose.printf( "Done.%n" );
         } ) );
     }//end addShutdownHook
 
