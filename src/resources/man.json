@@ -50,6 +50,11 @@
         "descr": "download the latest resources for the course bound "
     },
     {
+        "name" : "resync",
+        "args" : "",
+        "descr": "force a resync of the existing resources list. May be useful when the app bugged. Note that the whole list fileid <--> filename will be reset, so if some files were renamed, you need to manually edit the new .cybe file..."
+    },
+    {
         "name" : "oneshot",
         "args" : "url",
         "descr": "parse the given url and download resources in the "

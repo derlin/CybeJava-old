@@ -205,8 +205,10 @@ public class Cybe implements Closeable{
 
             if( loadLocalConfig() ){
                 if( execute( command, params ) ){
-                    localConfig.save();
-                    logger.debug.printf( "Saved local config %s%n", getLocalConfigFilePath() );
+                    if( localConfig.isModified() ){
+                        localConfig.save();
+                        logger.debug.printf( "Saved local config %s%n", getLocalConfigFilePath() );
+                    }
                 }else{
                     System.out.printf( "An error occurred while processing %s", getLocalConfigFilePath() );
                     System.out.print( "continue ? [y|N] " );
@@ -253,6 +255,7 @@ public class Cybe implements Closeable{
 
         connectionfullHandlers.put( "init", this::init );
         connectionfullHandlers.put( "pull", this::pull );
+        connectionfullHandlers.put( "resync", this::resyncInodesToNameMapping );
     }
 
     //----------------------------------------------------
@@ -440,6 +443,44 @@ public class Cybe implements Closeable{
 
 
     /*
+     * remove all the inode-to-names mapping from the config file and
+     * reconstruct it...
+     */
+    private boolean resyncInodesToNameMapping( List<String> args ){
+        try{
+            localConfig.removeAllFileRefs(); // clear the list totally
+
+            List<Future<NameValuePair>> futures = parser.findCourseResources( //
+                    localConfig.getCourseUrl(), ( ctype, name, in ) -> {
+                try{
+                    if( existingResources.contains( name ) ){
+                        String path = CybeUtils.concatPath( userDir, name );
+                        String id = CybeUtils.getUniqueFileId( path );
+                        // add its unique id to the inodesToNameMapping
+                        localConfig.putFileRef( id, name );
+                        logger.info.printf( "--> ADDED ref %s [%s]%n", name, id );
+                    }
+
+                }catch( Exception e ){
+                    logger.warn.printf( "Error while getting resource %s%n", name );
+                    logger.error.printf( "Exception inside resync handler : %s%s%n", e, e.getMessage() );
+                }
+            }, ( url, e ) -> System.err.println( url + ": " + e.getStatusLine() ) );
+
+            parser.futuresToMap( futures, PULL_TIMEOUT_SEC );
+            logger.debug.printf( "Resync done.%n" );
+
+        }catch( Exception e ){
+            logger.error.printf( "error while resync.%n" );
+            e.printStackTrace();
+            return false;
+        }
+
+        return true;
+    }//end pull
+
+
+    /*
      * display help: man = commands + description,help = commands only
      */
     private boolean helpOrMan( List<String> args, boolean isMan ){
@@ -520,7 +561,7 @@ public class Cybe implements Closeable{
     private boolean isFileAccepted( String ctype, String name ){
         final String extension = FilenameUtils.getExtension( name );
         for( String ct : defaultCtypes ){
-            if( ct.contains( ctype ) || extension.equals( ct )) return true;
+            if( ct.contains( ctype ) || extension.equals( ct ) ) return true;
         }//end for
 
         return localConfig.isFileAccepted( ctype, name );
