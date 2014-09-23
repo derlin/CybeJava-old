@@ -2,10 +2,12 @@ package cmdline;
 
 import cmdline.parsing.CliFlag;
 import cmdline.parsing.CliParser;
+import cmdline.parsing.CliStringOption;
 import gson.GsonUtils;
 import network.CybeConnector;
 import network.CybeParser;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.apache.http.NameValuePair;
@@ -89,10 +91,13 @@ public class Cybe implements Closeable{
             logger.debug.printf( "silent mode on%n." );
         } ) );
 
-        parser.registerOption( "-d", new CliFlag( () -> { // debug
+        parser.registerOption( "-v", new CliFlag( () -> { // debug
             logger.setDebug( SYSOUT_OPT );
-            logger.debug.printf( "debug mode on%n." );
+            logger.debug.printf( "debug mode on.%n" );
         } ) );
+
+        CliStringOption userDir = new CliStringOption( System.getProperty( "user.dir" ) );
+        parser.registerOption( "-p", userDir );   // userDir
 
         CliFlag interactiveFlag = new CliFlag();
         parser.registerOption( "-i", interactiveFlag ); // interactive
@@ -115,6 +120,8 @@ public class Cybe implements Closeable{
         // ----------------------------------------------------
 
         try( Cybe cybe = new Cybe( logger ) ){
+            cybe.setUserDir( userDir.getValue() ); // update the working directory
+
             // get the command
             if( updateAllOption.getValue() ){
                 String command;
@@ -191,7 +198,8 @@ public class Cybe implements Closeable{
 
 
         lastCmdret = !files.stream().anyMatch( confFile -> { // stop if an error occurs
-            userDir = confFile.getParent();
+            userDir = confFile.getParent();  //TODO: the next line is not really clean...
+            isLocalConfigLoaded = false; // reinit, so the userDir change is taken into account
             logger.info.printf( "%n-------------------------------%n" );
             logger.info.printf( "Changed working directory to %s%n", userDir );
 
@@ -283,7 +291,7 @@ public class Cybe implements Closeable{
 
     public boolean execute( String cmd, List<String> args ){
 
-        if( !cmd.equals( "init" ) && !isLocalConfigLoaded ){
+        if( !cmd.equals( "init" ) && !loadLocalConfig() ){
             logger.info.printf( "Directory not initialised. Try cybe init.%n" );
             return false;
         }
@@ -402,8 +410,8 @@ public class Cybe implements Closeable{
             List<Future<NameValuePair>> futures = parser.findCourseResources( //
                     localConfig.getCourseUrl(), ( ctype, name, in ) -> {
                 try{
-                    logger.debug.printf( "=== %s%n", name );
-                    if( isCtypeAccepted( ctype ) && !existingResources.contains( name ) ){
+                    logger.debug.printf( "=== %s [%s]%n", name, ctype );
+                    if( isFileAccepted( ctype, name ) && !existingResources.contains( name ) ){
                         existingResources.add( name ); // mark this file as handled
                         String path = CybeUtils.concatPath( userDir, name );
                         CybeUtils.saveResource( path, in ); // save the resource
@@ -464,11 +472,12 @@ public class Cybe implements Closeable{
      */
     private boolean loadLocalConfig(){
         if( isLocalConfigLoaded ) return true;
-        File localCybe = new File( getLocalConfigFilePath() );
-        if( localCybe.exists() ){
-            localConfig = ( LocalConfig ) GsonUtils.getJsonFromFile( localCybe, new LocalConfig() );
+        File configFile = new File( getLocalConfigFilePath() );
+        if( configFile.exists() ){
+            localConfig = ( LocalConfig ) GsonUtils.getJsonFromFile( configFile, new LocalConfig() );
             if( localConfig != null && !CybeUtils.isNullOrEmpty( localConfig.getCourseUrl() ) ){
                 isLocalConfigLoaded = true;
+                localConfig.setFilepath( configFile.getPath() ); // where to save the config
                 existingResources = new HashSet<>( //
                         getExistingResources( userDir, localConfig::getFileFromId ).values() );
             }
@@ -490,7 +499,7 @@ public class Cybe implements Closeable{
     }
 
     /* *****************************************************************
-     * getters and utils
+     * getters and setters
      * ****************************************************************/
 
 
@@ -498,14 +507,23 @@ public class Cybe implements Closeable{
         return lastCmdret;
     }
 
+
+    public void setUserDir( String userDir ){
+        this.userDir = userDir;
+    }
+
     /* *****************************************************************
      * private utils
      * ****************************************************************/
 
 
-    private boolean isCtypeAccepted( String ctype ){
-        return defaultCtypes.stream().anyMatch( ctype::contains ) ||  //
-                localConfig.isCtypeAccepted( ctype );
+    private boolean isFileAccepted( String ctype, String name ){
+        final String extension = FilenameUtils.getExtension( name );
+        for( String ct : defaultCtypes ){
+            if( ct.contains( ctype ) || extension.equals( ct )) return true;
+        }//end for
+
+        return localConfig.isFileAccepted( ctype, name );
     }
 
 
