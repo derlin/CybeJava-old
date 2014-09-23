@@ -1,25 +1,21 @@
 package props;
 
-import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 import gson.GsonContainable;
 import gson.GsonUtils;
 import network.AuthContainer;
 
 import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * @author: Lucy Linder
  * @date: 19.06.2014
  */
 public class GlobalConfig implements GsonContainable, AuthContainer{
+
+    public static final List<String> SUPPORTED_PLATFORMS = Arrays.asList( "cyberlearn.hes-so", "moodle.unil" );
 
     public static final String GLOBAL_CONFIG_FILEPATH = //
             System.getProperty( "user.home" ) + File.separator + ".cybeconf";
@@ -32,13 +28,17 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
     @SerializedName( "target platform" )
     private String platform;
 
-    public static void main( String[] args ) throws IOException{
-        Type collectionType = new TypeToken<Map<String, String>>(){
-        }.getType();
-        String json = new String( Files.readAllBytes( Paths.get( GLOBAL_CONFIG_FILEPATH ) ), StandardCharsets.UTF_8 );
-        Map<String, String> map = new Gson().fromJson( json, collectionType );
-        System.out.println( map );
-    }//end main
+
+    public GlobalConfig(){
+
+    }//end constructor
+
+
+    public GlobalConfig( String platform, String username, String pass ){
+        this.username = username;
+        this.pass = pass;
+        this.platform = platform;
+    }
 
 
     public static GlobalConfig getInstance(){
@@ -102,7 +102,7 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
      * </code>
      *
      * @param hex the hexadecimal representation of str
-     * @return str
+     * @return str the string equivalent
      */
     public static String perlPack( String hex ){
         StringBuilder builder = new StringBuilder();
@@ -128,7 +128,7 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
      * unpack "H*", $vartoconvert
      * </code>
      *
-     * @param str
+     * @param str the string
      * @return the hexadecimal representation of str
      */
     public static String perlUnpack( String str ){
