@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.net.URLDecoder;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 import static utils.CybeUtils.*;
 
@@ -119,16 +118,18 @@ public class CybeParser {
      */
     public Map<String, String> futuresToMap( List<Future<NameValuePair>> futures, final int timeout ){
         // using a parallel stream here divides the runtime by a factor 2
-        Map<String, String> result = futures.stream()
+        final Map<String, String> result = new TreeMap<>(  );
+        futures.stream()
                 // wait for each task to finish
                 .map( f -> CybeParser.getWithTimeout( f, timeout, logger ) )
                         // don't process null values
                 .filter( f -> f != null )
                         // convert the result to a map
-                .collect( Collectors.toMap( NameValuePair::getName, NameValuePair::getValue ) );
+                .forEach( (pair) -> { result.put( pair.getName(), pair.getValue() ); } );
 
         return result;
     }//end getListOfCourses
+
 
 
     /**
