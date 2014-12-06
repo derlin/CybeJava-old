@@ -37,7 +37,7 @@ public class Cybe implements Closeable{
     private static final int PULL_TIMEOUT_SEC = 15;  // max time to download one file
 
     private static final List<String> supportedPlatforms = Arrays.asList( "cyberlearn.hes-so", "moodle.unil" );
-    private static final List<String> defaultCtypes = Arrays.asList( "pdf", "text/plain" );
+    private static final List<String> defaultCtypes = Arrays.asList( "pdf", "text/plain", "zip", "doc" );
 
     private static Scanner in = new Scanner( System.in );
 
@@ -66,8 +66,8 @@ public class Cybe implements Closeable{
     }
 
 
-    private Map<String, CommandExecutor<String>> connectionlessHandlers = new HashMap<>(),
-            connectionfullHandlers = new HashMap<>();
+    private Map<String, CommandExecutor<String>> connectionlessHandlers = new TreeMap<>(),
+            connectionfullHandlers = new TreeMap<>(), alwaysValidHandlers = new TreeMap<>(  );
 
     /* *****************************************************************
      * MAIN
@@ -184,7 +184,8 @@ public class Cybe implements Closeable{
      * check if the given command exists
      */
     public boolean can( String command ){
-        return connectionfullHandlers.containsKey( command ) || //
+        return  alwaysValidHandlers.containsKey( command ) || //
+                connectionfullHandlers.containsKey( command ) || //
                 connectionlessHandlers.containsKey( command );
     }//end can
 
@@ -233,16 +234,15 @@ public class Cybe implements Closeable{
 
 
     private void fillCommandMaps(){
-        connectionlessHandlers = new HashMap<>();
-        connectionlessHandlers.put( "init-global", Cybe::initGlobal );
+
+        alwaysValidHandlers.put( "init-global", Cybe::initGlobal );
+        alwaysValidHandlers.put( "help", args -> helpOrMan( args, false ) );
+        alwaysValidHandlers.put( "man", args -> helpOrMan( args, true ) );
 
         connectionlessHandlers.put( "dump", p -> {
             System.out.println( GsonUtils.toJson( localConfig ).replaceAll( "\\\"|\\{|\\}|\\[|\\]|,", "" ) );
             return true;
         } );
-
-        connectionlessHandlers.put( "help", args -> helpOrMan( args, false ) );
-        connectionlessHandlers.put( "man", args -> helpOrMan( args, true ) );
 
         connectionlessHandlers.put( "add-origin", args -> add( localConfig::addOrigin, args ) );  //
         connectionlessHandlers.put( "rm-origin", args -> remove( localConfig::removeOrigin, args ) );  //
@@ -294,21 +294,27 @@ public class Cybe implements Closeable{
 
     public boolean execute( String cmd, List<String> args ){
 
-        if( !cmd.equals( "init" ) && !loadLocalConfig() ){
-            logger.info.printf( "Directory not initialised. Try cybe init.%n" );
-            return false;
-        }
-
-        if( connectionlessHandlers.containsKey( cmd ) ){
-            lastCmdret = connectionlessHandlers.get( cmd ).process( args );
-
-        }else if( connectionfullHandlers.containsKey( cmd ) ){
-            if( !createConnectorAndParser() ) printUsageAndQuit( "Could not connect...", EXIT_STATUS_ERROR );
-            lastCmdret = connectionfullHandlers.get( cmd ).process( args );
+        // TODO just a quick fix in case the directory is not initialised (see if below)
+        if( alwaysValidHandlers.containsKey( cmd )){
+            lastCmdret = alwaysValidHandlers.get( cmd ).process( args );
 
         }else{
-            logger.error.printf( getUnknownCommandMessage( cmd ) );
-            return false;
+            if( !loadLocalConfig() ){
+                logger.info.printf( "Directory not initialised. Try cybe init.%n" );
+                return false;
+            }
+
+            if( connectionlessHandlers.containsKey( cmd ) ){
+                lastCmdret = connectionlessHandlers.get( cmd ).process( args );
+
+            }else if( connectionfullHandlers.containsKey( cmd ) ){
+                if( !createConnectorAndParser() ) printUsageAndQuit( "Could not connect...", EXIT_STATUS_ERROR );
+                lastCmdret = connectionfullHandlers.get( cmd ).process( args );
+
+            }else{
+                logger.error.printf( getUnknownCommandMessage( cmd ) );
+                return false;
+            }
         }
         if( !lastCmdret ) System.out.println( "Usage: " + doc.get( cmd ).syntax() );
 
