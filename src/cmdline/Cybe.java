@@ -17,7 +17,6 @@ import props.PlatformLinks;
 import utils.CybeUtils;
 import utils.SuperSimpleLogger;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -30,7 +29,7 @@ import static utils.SuperSimpleLogger.*;
  * @author: Lucy Linder
  * @date: 19.06.2014
  */
-public class Cybe implements Closeable{
+public class Cybe implements AutoCloseable{
 
     private static final int EXIT_STATUS_ERROR = 1, EXIT_STATUS_OK = 0;
     private static final String LOCAL_CONF_NAME = ".cybe";
@@ -118,7 +117,7 @@ public class Cybe implements Closeable{
         params.removeIf( p -> p.startsWith( "-" ) );
 
         // ----------------------------------------------------
-
+        int exitStatus = EXIT_STATUS_OK;
         try( Cybe cybe = new Cybe( logger ) ){
             cybe.setUserDir( userDir.getValue() ); // update the working directory
 
@@ -152,8 +151,11 @@ public class Cybe implements Closeable{
                 if( interactiveFlag.getValue() ) cybe.interactivePrompt();
             }
 
-            System.exit( cybe.lastCmdret() ? EXIT_STATUS_OK : EXIT_STATUS_ERROR );
+            exitStatus =  cybe.lastCmdret() ? EXIT_STATUS_OK : EXIT_STATUS_ERROR;
+
         }
+
+        System.exit( exitStatus );
     }//end main
 
     /* ****************************************************************/
@@ -262,8 +264,18 @@ public class Cybe implements Closeable{
 
 
     @Override
+    protected void finalize() throws Throwable{
+        logger.debug.printf( "finalize%n");
+        super.finalize();
+    }
+
+
+    @Override
     public void close() throws IOException{
-        if( localConfig != null ) localConfig.close();
+        if( localConfig != null ){
+            localConfig.close();
+        }
+        if( connector != null ) connector.close();
     }
 
     //----------------------------------------------------
@@ -481,7 +493,7 @@ public class Cybe implements Closeable{
             e.printStackTrace();
             return false;
         }
-
+        logger.debug.printf( "Resync done. Modified : %b%n", localConfig.isModified());
         return true;
     }//end pull
 
@@ -634,12 +646,13 @@ public class Cybe implements Closeable{
 
     private void addShutdownHook(){
         Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-            logger.verbose.printf( "Cleaning up.%n" );
-            if( localConfig != null ){
-                localConfig.close();
+            logger.info.printf( "Cleaning up.%n" );
+            try{
+                close();
+            }catch( IOException e ){
+                e.printStackTrace();
             }
-            if( connector != null ) connector.close();
-            logger.verbose.printf( "Done.%n" );
+            logger.info.printf( "Done.%n" );
         } ) );
     }//end addShutdownHook
 

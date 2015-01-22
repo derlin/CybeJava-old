@@ -116,7 +116,8 @@ public class LocalConfig implements GsonContainable, Closeable{
      * @param filename the original filename, as found on moodle/cyberlearn
      */
     public void putFileRef( String uniqueId, String filename ){
-        modified |= this.inodesToNamesMapping.put( uniqueId, filename ) != null;
+        this.inodesToNamesMapping.put( uniqueId, filename );
+        modified = true;
     }
 
 
@@ -285,7 +286,13 @@ public class LocalConfig implements GsonContainable, Closeable{
      * @return true upon success
      */
     public boolean save( String filepath ){
-        return GsonUtils.writeJsonFile( filepath, this );
+        boolean ret = false;
+        if(modified){
+            System.out.println("Saving LocalConfig...");
+            ret = GsonUtils.writeJsonFile( filepath, this );
+            modified = !ret;
+        }
+        return ret;
     }//end save
 
 

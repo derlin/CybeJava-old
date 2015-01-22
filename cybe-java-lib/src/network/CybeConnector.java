@@ -128,14 +128,18 @@ public class CybeConnector implements Closeable{
             // check that the cookies are still valid
             getResource( platformLinks.homeUrl(), ( t, n, i ) -> {
                 // if we are authenticated, a logout button should be present
-                System.out.println( n );  // TODO: just check that the url ends with /my
+                // TODO: just check that the url ends with /my
                 connected = Jsoup.parse( IOUtils.toString( i ) ).select( "div.logininfo a[href*=logout]" ).size() > 0;
                 assert ( !connected || n.endsWith( "my/" ) );
             }, null );
         }
 
-        if( !connected ) authenticate( auth ); // no viable cookies, do the full auth again
-        connected = true;
+        if( connected ){
+            System.out.println( "Valid cookies found. Skipping authentication process." );
+        }else{
+            authenticate( auth ); // no viable cookies, do the full auth again
+        }
+        connected = true; // TODO better check ??
 
         saveCookiesToTempFile();  // save the cookies for later use
         logger.info.printf( "%nConnected.%n" );
@@ -174,6 +178,8 @@ public class CybeConnector implements Closeable{
 
                 // close the entity streams
                 EntityUtils.consume( entity );
+
+                // if no error, we are connected
 
             }finally{
                 httppost.releaseConnection();
