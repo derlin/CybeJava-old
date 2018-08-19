@@ -289,7 +289,7 @@ public class LocalConfig implements GsonContainable, Closeable{
         boolean ret = false;
         if(modified){
             System.out.println("Saving LocalConfig...");
-            ret = GsonUtils.writeJsonFile( filepath, this );
+            ret = GsonUtils.writeJsonFile( filepath, this, true );
             modified = !ret;
         }
         return ret;

@@ -255,8 +255,8 @@ public class Cybe implements AutoCloseable{
         connectionlessHandlers.put( "add-dir", args -> add( localConfig::addDir, args ) );  //
         connectionlessHandlers.put( "rm-dir", args -> remove( localConfig::removeDir, args ) );  //
 
-        connectionfullHandlers.put( "init", this::init );
         connectionfullHandlers.put( "pull", this::pull );
+        connectionfullHandlers.put( "init", this::init );
         connectionfullHandlers.put( "resync", this::resyncInodesToNameMapping );
     }
 
@@ -311,7 +311,7 @@ public class Cybe implements AutoCloseable{
             lastCmdret = alwaysValidHandlers.get( cmd ).process( args );
 
         }else{
-            if( !loadLocalConfig() ){
+            if( !cmd.equals("init") && !loadLocalConfig() ){
                 logger.info.printf( "Directory not initialised. Try cybe init.%n" );
                 return false;
             }

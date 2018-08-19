@@ -9,3 +9,4 @@ out/*
 *.iml
 pass/*.iml
 *.pdf
+cybe-build

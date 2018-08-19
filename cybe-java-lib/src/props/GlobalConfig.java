@@ -53,7 +53,7 @@ public class GlobalConfig implements GsonContainable, AuthContainer{
 
 
     public boolean save(){
-        return GsonUtils.writeJsonFile( GLOBAL_CONFIG_FILEPATH, this );
+        return GsonUtils.writeJsonFile( GLOBAL_CONFIG_FILEPATH, this, true );
     }//end save
 
     /* *****************************************************************
